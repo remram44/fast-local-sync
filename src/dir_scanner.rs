@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
+use tracing::debug;
 
 use crate::copy::copy_directory;
 use crate::file_copier::FileCopyPool;
@@ -69,11 +70,13 @@ impl DirScanPool {
     }
 
     pub fn add(&self, path: PathBuf) {
+        debug!("scanner add {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
         self.queue_send.send((path, true)).unwrap();
     }
 
     pub fn add_no_check(&self, path: PathBuf) {
+        debug!("scanner add_no_check {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
         self.queue_send.send((path, false)).unwrap();
     }

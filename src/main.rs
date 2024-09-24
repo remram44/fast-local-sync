@@ -3,6 +3,7 @@ mod copy;
 mod file_copier;
 mod stats;
 
+use pretty_env_logger;
 use std::env::args_os;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -26,6 +27,9 @@ fn parse_num_option(opt: Option<OsString>, flag: &'static str) -> usize {
 }
 
 fn main() {
+    // Initialize logging
+    pretty_env_logger::init();
+
     // Parse command line
     let mut entries = None;
     let mut size = None;
