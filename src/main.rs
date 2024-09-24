@@ -33,9 +33,10 @@ fn main() {
     let mut threads = None;
 
     let mut args = args_os();
+    let usage = "Usage: cephfssync [--entries TOTAL_ENTRIES] [--size TOTAL_SIZE] [--threads NUM_THREADS] SOURCE DESTINATION";
     while let Some(arg) = args.next() {
         if &arg == "--help" {
-            println!("Usage: cephfssync [--entries TOTAL_ENTRIES] [--size TOTAL_SIZE] [--threads NUM_THREADS] SOURCE DESTINATION");
+            println!("{}", usage);
             exit(0);
         } else if &arg == "--entries" {
             entries = Some(parse_num_option(args.next(), "--entries"));
@@ -50,6 +51,7 @@ fn main() {
                 target = Some(arg);
             } else {
                 eprintln!("Too many arguments");
+                eprintln!("{}", usage);
                 exit(2);
             }
         }
@@ -60,6 +62,7 @@ fn main() {
         Some(s) => s.into(),
         None => {
             eprintln!("Missing source");
+            eprintln!("{}", usage);
             exit(2);
         }
     };
@@ -67,6 +70,7 @@ fn main() {
         Some(s) => s.into(),
         None => {
             eprintln!("Missing target");
+            eprintln!("{}", usage);
             exit(2);
         }
     };
