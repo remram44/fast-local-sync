@@ -1,4 +1,5 @@
 mod dir_scanner;
+mod copy;
 mod file_copier;
 mod stats;
 
@@ -82,12 +83,12 @@ fn main() {
     let stats = Arc::new(stats::Stats::new(entries, size));
 
     // Create worker pools
-    let file_copy_pool = Arc::new(file_copier::FileCopyPool::new(
+    let file_copy_pool = file_copier::FileCopyPool::new(
         source.as_path(),
         target.as_path(),
         threads,
         stats.clone(),
-    ));
+    );
     let dir_scan_pool = dir_scanner::DirScanPool::new(
         source.as_path(),
         target.as_path(),

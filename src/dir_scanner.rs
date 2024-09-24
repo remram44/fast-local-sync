@@ -1,22 +1,28 @@
 use crossbeam::channel::{Receiver, Sender, bounded};
 use std::collections::HashSet;
-use std::fs::{metadata, read_dir, remove_dir_all, remove_file};
+use std::ffi::OsString;
+use std::fs::{Metadata, read_dir, remove_dir_all, remove_file, symlink_metadata};
 use std::io::ErrorKind;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
 
+use crate::copy::copy_directory;
 use crate::file_copier::FileCopyPool;
 use crate::stats::Stats;
 
 pub struct DirScanPool {
+    source: PathBuf,
+    target: PathBuf,
     queue_send: Sender<(PathBuf, bool)>,
     queue_recv: Receiver<(PathBuf, bool)>,
     enqueued: Arc<AtomicUsize>,
     file_copier: Arc<FileCopyPool>,
-    threads: Vec<(JoinHandle<()>, Arc<AtomicBool>)>,
+    threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
+    stats: Arc<Stats>,
 }
 
 impl DirScanPool {
@@ -26,50 +32,50 @@ impl DirScanPool {
         num_threads: usize,
         file_copier: Arc<FileCopyPool>,
         stats: Arc<Stats>,
-    ) -> DirScanPool {
+    ) -> Arc<DirScanPool> {
         // Create work queue
         let (send, recv) = bounded(4096);
         let enqueued = Arc::new(AtomicUsize::new(0));
 
-        // Start threads
-        let mut threads = Vec::new();
-        for _ in 0..num_threads {
-            let source = source.to_owned();
-            let target = target.to_owned();
-            let recv2 = recv.clone();
-            let send2 = send.clone();
-            let enqueued = enqueued.clone();
-            let file_copier = file_copier.clone();
-            let stats = stats.clone();
-            let cond = Arc::new(AtomicBool::new(false));
-            let cond2 = cond.clone();
-            let thread = std::thread::spawn(move || {
-                dir_scan_thread(
-                    source,
-                    target,
-                    recv2,
-                    send2,
-                    enqueued,
-                    file_copier,
-                    stats,
-                    cond2,
-                )
-            });
-            threads.push((thread, cond));
-        }
-
-        DirScanPool {
+        let pool = Arc::new(DirScanPool {
+            source: source.to_owned(),
+            target: target.to_owned(),
             queue_send: send,
             queue_recv: recv,
             enqueued,
             file_copier,
-            threads,
+            threads: Mutex::new(Vec::new()),
+            stats,
+        });
+
+        // Start threads
+        {
+            let mut threads = pool.threads.lock().unwrap();
+            for _ in 0..num_threads {
+                let pool2 = pool.clone();
+                let cond = Arc::new(AtomicBool::new(false));
+                let cond2 = cond.clone();
+                let thread = std::thread::spawn(move || {
+                    dir_scan_thread(
+                        pool2,
+                        cond2,
+                    )
+                });
+                threads.push((thread, cond));
+            }
         }
+
+        pool
     }
 
     pub fn add(&self, path: PathBuf) {
         self.enqueued.fetch_add(1, Ordering::Relaxed);
         self.queue_send.send((path, true)).unwrap();
+    }
+
+    pub fn add_no_check(&self, path: PathBuf) {
+        self.enqueued.fetch_add(1, Ordering::Relaxed);
+        self.queue_send.send((path, false)).unwrap();
     }
 
     pub fn join(&self) {
@@ -82,22 +88,43 @@ impl DirScanPool {
     }
 }
 
+fn metadata_equal(a: &Metadata, b: &Metadata) -> bool {
+    if a.file_type() != b.file_type() {
+        return false;
+    }
+    if a.len() != b.len() {
+        return false;
+    }
+    if a.mode() != b.mode() {
+        return false;
+    }
+    if a.uid() != b.uid() {
+        return false;
+    }
+    if a.gid() != b.gid() {
+        return false;
+    }
+    if a.modified().unwrap() != b.modified().unwrap() {
+        return false;
+    }
+    if a.created().unwrap() != b.created().unwrap() {
+        return false;
+    }
+    return true;
+}
+
 fn dir_scan_thread(
-    source: PathBuf,
-    target: PathBuf,
-    queue: Receiver<(PathBuf, bool)>,
-    queue_send: Sender<(PathBuf, bool)>,
-    enqueued: Arc<AtomicUsize>,
-    file_copier: Arc<FileCopyPool>,
-    stats: Arc<Stats>,
+    pool: Arc<DirScanPool>,
     stop_condition: Arc<AtomicBool>,
 ) {
-    let enqueued = &*enqueued;
-    let file_copier = &*file_copier;
+    let pool = &*pool;
+    let file_copier = &pool.file_copier;
     let stop_condition = &*stop_condition;
+    let source = &pool.source;
+    let target = &pool.target;
 
     let dir_scan = |path: PathBuf, check_target: bool| {
-        let mut seen_source_entries = HashSet::<PathBuf>::new();
+        let mut seen_source_entries = HashSet::<OsString>::new();
 
         let source_dir = match read_dir(source.join(&path)) {
             Ok(d) => d,
@@ -127,16 +154,24 @@ fn dir_scan_thread(
             let target_path = target.join(&path);
 
             let copy = || {
-                if source_metadata.file_type().is_dir() {
-                    enqueued.fetch_add(1, Ordering::Relaxed);
-                    queue_send.send((path.clone(), false));
+                if let Err(e) = copy_directory(&source_path, &target_path) {
+                    eprintln!("Error copying directory: {}", e);
+                    return;
+                }
+
+                if source_metadata.is_dir() {
+                    pool.add_no_check(path.clone());
                 } else {
                     file_copier.add(path.clone());
                 }
             };
 
-            if check_target {
-                match metadata(&target_path) {
+            if !check_target {
+                // Fast path: if the subtree doesn't exist on the target,
+                // no need to check each entry
+                copy()
+            } else {
+                match symlink_metadata(&target_path) {
                     Err(e) if e.kind() == ErrorKind::NotFound => {
                         // Target does not exist, copy
                         copy();
@@ -148,7 +183,7 @@ fn dir_scan_thread(
                     Ok(target_metadata) => {
                         // Compare metadata
                         if source_metadata.file_type() != target_metadata.file_type() {
-                            if target_metadata.file_type().is_dir() {
+                            if target_metadata.is_dir() {
                                 if let Err(e) = remove_dir_all(&target_path) {
                                     eprintln!("Error removing target directory: {}", e);
                                     return;
@@ -159,25 +194,71 @@ fn dir_scan_thread(
                                     return;
                                 }
                             }
+                            // Target no longer exists, copy
                             copy();
-                        } else if source_metadata.file_type().is_dir() {
-                            enqueued.fetch_add(1, Ordering::Relaxed);
-                            queue_send.send((path.clone(), true));
+                        } else if source_metadata.is_dir() {
+                            if !metadata_equal(&source_metadata, &target_metadata) {
+                                if let Err(e) = copy_directory(&source_path, &target_path) {
+                                    eprintln!("Error copying directory: {}", e);
+                                    return;
+                                }
+                            }
+                            // Recurse
+                            pool.add(path.clone());
+                        } else {
+                            // Copy non-directory entry (file, link, ...)
+                            file_copier.add(path.clone());
                         }
                     }
                 };
-            } else {
-                copy();
             }
 
-            seen_source_entries.insert(source_path);
+            seen_source_entries.insert(source_entry.file_name().to_owned());
         }
 
-        // TODO: Remove unseen entries in target
+        // Remove unseen entries in target
+        let target_dir = match read_dir(target.join(&path)) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Error reading target directory: {}", e);
+                return;
+            }
+        };
+
+        for target_entry in target_dir {
+            let target_entry = match target_entry {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error reading target directory entry: {}", e);
+                    return;
+                }
+            };
+            if !seen_source_entries.contains(&target_entry.file_name()) {
+                let target_metadata = match target_entry.metadata() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("Error reading target directory entry: {}", e);
+                        return;
+                    }
+                };
+
+                if target_metadata.is_dir() {
+                    if let Err(e) = remove_dir_all(target_entry.path()) {
+                        eprintln!("Error removing target directory: {}", e);
+                        return;
+                    }
+                } else {
+                    if let Err(e) = remove_file(target_entry.path()) {
+                        eprintln!("Error removing target entry: {}", e);
+                        return;
+                    }
+                }
+            }
+        }
     };
 
     loop {
-        let (path, check_target) = match queue.recv_timeout(Duration::from_secs(5)) {
+        let (path, check_target) = match pool.queue_recv.recv_timeout(Duration::from_secs(5)) {
             Ok(p) => p,
             Err(_) => {
                 // Check if we should stop
@@ -190,6 +271,6 @@ fn dir_scan_thread(
 
         dir_scan(path, check_target);
 
-        enqueued.fetch_sub(1, Ordering::Relaxed);
+        pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }
 }
