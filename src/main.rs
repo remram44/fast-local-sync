@@ -33,7 +33,7 @@ fn main() {
     let mut threads = None;
 
     let mut args = args_os();
-    let usage = "Usage: cephfssync [--entries TOTAL_ENTRIES] [--size TOTAL_SIZE] [--threads NUM_THREADS] SOURCE DESTINATION";
+    let usage = "Usage: fast-local-sync [--entries TOTAL_ENTRIES] [--size TOTAL_SIZE] [--threads NUM_THREADS] SOURCE DESTINATION";
     while let Some(arg) = args.next() {
         if &arg == "--help" {
             println!("{}", usage);
