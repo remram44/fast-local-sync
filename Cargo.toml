@@ -2,6 +2,12 @@
 name = "fast-local-sync"
 version = "0.1.0"
 edition = "2021"
+authors = ["Remi Rampin <remi@rampin.org"]
+description = "Fast directory sync tool for the local filesystem"
+readme = "README.md"
+repository = "https://github.com/remram44/fast-local-sync"
+keywords = ["sync", "copy", "filesystem", "rsync"]
+license = "MIT"
 
 [dependencies]
 crossbeam = "0.8"
