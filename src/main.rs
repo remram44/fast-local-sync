@@ -37,6 +37,7 @@ fn main() {
     let mut threads = None;
 
     let mut args = args_os();
+    args.next();
     let usage = "Usage: fast-local-sync [--entries TOTAL_ENTRIES] [--size TOTAL_SIZE] [--threads NUM_THREADS] SOURCE DESTINATION";
     while let Some(arg) = args.next() {
         if &arg == "--help" {
