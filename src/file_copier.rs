@@ -6,6 +6,8 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::thread::JoinHandle;
 
+use crate::stats::Stats;
+
 pub struct FileCopyPool {
     queue_send: Sender<PathBuf>,
     queue_recv: Receiver<PathBuf>,
@@ -18,6 +20,7 @@ impl FileCopyPool {
         source: &Path,
         target: &Path,
         num_threads: usize,
+        stats: Arc<Stats>,
     ) -> FileCopyPool {
         // Create work queue
         let (send, recv) = bounded(4096);
@@ -28,16 +31,18 @@ impl FileCopyPool {
         for _ in 0..num_threads {
             let source = source.to_owned();
             let target = target.to_owned();
-            let cond = Arc::new(AtomicBool::new(false));
-            let cond2 = cond.clone();
             let recv2 = recv.clone();
             let enqueued = enqueued.clone();
+            let stats = stats.clone();
+            let cond = Arc::new(AtomicBool::new(false));
+            let cond2 = cond.clone();
             let thread = std::thread::spawn(move || {
                 file_copy_thread(
                     source,
                     target,
                     recv2,
                     enqueued,
+                    stats,
                     cond2,
                 )
             });
@@ -72,6 +77,7 @@ fn file_copy_thread(
     target: PathBuf,
     queue: Receiver<PathBuf>,
     enqueued: Arc<AtomicUsize>,
+    stats: Arc<Stats>,
     stop_condition: Arc<AtomicBool>,
 ) {
     loop {

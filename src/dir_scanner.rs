@@ -6,6 +6,7 @@ use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
 
 use crate::file_copier::FileCopyPool;
+use crate::stats::Stats;
 
 pub struct DirScanPool {
     queue_send: Sender<PathBuf>,
@@ -21,6 +22,7 @@ impl DirScanPool {
         target: &Path,
         num_threads: usize,
         file_copier: Arc<FileCopyPool>,
+        stats: Arc<Stats>,
     ) -> DirScanPool {
         // Create work queue
         let (send, recv) = bounded(4096);
@@ -34,6 +36,7 @@ impl DirScanPool {
             let recv2 = recv.clone();
             let enqueued = enqueued.clone();
             let file_copier = file_copier.clone();
+            let stats = stats.clone();
             let cond = Arc::new(AtomicBool::new(false));
             let cond2 = cond.clone();
             let thread = std::thread::spawn(move || {
@@ -43,6 +46,7 @@ impl DirScanPool {
                     recv2,
                     enqueued,
                     file_copier,
+                    stats,
                     cond2,
                 )
             });
@@ -79,6 +83,7 @@ fn dir_scan_thread(
     queue: Receiver<PathBuf>,
     enqueued: Arc<AtomicUsize>,
     file_copier: Arc<FileCopyPool>,
+    stats: Arc<Stats>,
     stop_condition: Arc<AtomicBool>,
 ) {
     let enqueued = &*enqueued;

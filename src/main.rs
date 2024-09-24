@@ -1,11 +1,14 @@
 mod dir_scanner;
 mod file_copier;
+mod stats;
 
 use std::env::args_os;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 fn parse_num_option(opt: Option<OsString>, flag: &'static str) -> usize {
     let opt = match opt {
@@ -75,23 +78,60 @@ fn main() {
         }
     };
 
+    // Initialize statistics
+    let stats = Arc::new(stats::Stats::new(entries, size));
+
     // Create worker pools
     let file_copy_pool = Arc::new(file_copier::FileCopyPool::new(
         source.as_path(),
         target.as_path(),
         threads,
+        stats.clone(),
     ));
     let dir_scan_pool = dir_scanner::DirScanPool::new(
         source.as_path(),
         target.as_path(),
         threads,
         file_copy_pool.clone(),
+        stats.clone(),
     );
 
     // Enqueue work
     dir_scan_pool.add("/".into());
 
-    dir_scan_pool.join();
+    // Print stats regularly
+    {
+        let stats = stats.clone();
+        thread::spawn(move || {
+            let stats = &*stats;
 
+            let mut i = 0;
+
+            loop {
+                thread::sleep(Duration::from_secs(10));
+
+                i += 1;
+                if i >= 30 {
+                    i = 1;
+                    eprintln!(
+                        "SCANNED   \
+                         SKIPPED   \
+                         QUEUED    \
+                         COPIED"
+                    );
+                }
+                eprintln!(
+                    "{:>9} {:>9} {:>9} {:>9}",
+                    stats.scanned_entries(),
+                    stats.skipped_entries(),
+                    stats.queued_copy_entries(),
+                    stats.copied_entries(),
+                )
+            }
+        });
+    }
+
+    // Wait until done
+    dir_scan_pool.join();
     file_copy_pool.join();
 }
