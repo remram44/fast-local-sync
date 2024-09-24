@@ -92,7 +92,7 @@ fn metadata_equal(a: &Metadata, b: &Metadata) -> bool {
     if a.file_type() != b.file_type() {
         return false;
     }
-    if a.len() != b.len() {
+    if a.is_file() && a.len() != b.len() {
         return false;
     }
     if a.mode() != b.mode() {
@@ -105,9 +105,6 @@ fn metadata_equal(a: &Metadata, b: &Metadata) -> bool {
         return false;
     }
     if a.modified().unwrap() != b.modified().unwrap() {
-        return false;
-    }
-    if a.created().unwrap() != b.created().unwrap() {
         return false;
     }
     return true;

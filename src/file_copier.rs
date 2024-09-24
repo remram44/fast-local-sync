@@ -1,5 +1,4 @@
 use crossbeam::channel::{Receiver, Sender, bounded};
-use std::os::unix::fs::{chown, symlink};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
