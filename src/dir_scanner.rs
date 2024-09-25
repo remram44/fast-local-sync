@@ -1,4 +1,4 @@
-use crossbeam::channel::{Receiver, Sender, bounded};
+use crossbeam::channel::{Receiver, Sender, unbounded};
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs::{Metadata, read_dir, remove_dir_all, remove_file, symlink_metadata};
@@ -35,7 +35,7 @@ impl DirScanPool {
         stats: Arc<Stats>,
     ) -> Arc<DirScanPool> {
         // Create work queue
-        let (send, recv) = bounded(4096);
+        let (send, recv) = unbounded();
         let enqueued = Arc::new(AtomicUsize::new(0));
 
         let pool = Arc::new(DirScanPool {
