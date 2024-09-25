@@ -28,7 +28,26 @@ fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
         setfacl(&[target], &default_acl, Some(AclOption::DEFAULT_ACL))?;
     }
 
-    // TODO: Extended attrs
+    #[cfg(feature = "attr")]
+    {
+        use std::collections::HashSet;
+        use xattr::{get, list, remove, set};
+
+        let mut seen_attrs = HashSet::new();
+
+        for name in list(source)? {
+            if let Some(value) = get(target, &name)? {
+                set(target, &name, &value)?;
+                seen_attrs.insert(name);
+            }
+        }
+
+        for name in list(target)? {
+            if !seen_attrs.contains(&name) {
+                remove(target, name)?;
+            }
+        }
+    }
 
     Ok(())
 }
