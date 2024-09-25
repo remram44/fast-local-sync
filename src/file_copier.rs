@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
 use std::thread::JoinHandle;
+use tracing::{debug, error, info};
 
 use crate::copy::copy_file;
 use crate::stats::Stats;
@@ -53,12 +54,14 @@ impl FileCopyPool {
                 });
                 threads.push((thread, cond));
             }
+            info!("Created {} file copy threads", num_threads);
         }
 
         pool
     }
 
     pub fn add(&self, path: PathBuf) {
+        debug!("copier add {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
         self.queue_send.send(path).unwrap();
     }
@@ -66,6 +69,7 @@ impl FileCopyPool {
     pub fn join(&self) {
         let enqueued = &*self.enqueued;
         loop {
+            debug!("file copier enqueued {}", enqueued.load(Ordering::Relaxed));
             if enqueued.load(Ordering::Relaxed) > 0 {
                 sleep(Duration::from_secs(5));
             }
@@ -94,8 +98,10 @@ fn file_copy_thread(
         let source_path = pool.source.join(&path);
         let target_path = pool.target.join(&path);
 
+        debug!("copy {:?} -> {:?}", source_path, target_path);
+
         if let Err(e) = copy_file(&source_path, &target_path) {
-            eprintln!("Error copying file: {}", e);
+            error!("Error copying file: {}", e);
         }
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);

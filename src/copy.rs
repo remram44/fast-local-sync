@@ -3,6 +3,7 @@ use std::io::ErrorKind;
 use std::fs::{copy, create_dir, set_permissions, symlink_metadata};
 use std::os::unix::fs::{MetadataExt, chown};
 use std::path::Path;
+use tracing::debug;
 
 fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
     // Get metadata of source
@@ -20,6 +21,8 @@ fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
 }
 
 pub fn copy_directory(source: &Path, target: &Path) -> std::io::Result<()> {
+    debug!("copy_directory {:?} {:?}", source, target);
+
     // Create the directory if it does not exist
     match create_dir(target) {
         Ok(()) => {}
@@ -31,6 +34,8 @@ pub fn copy_directory(source: &Path, target: &Path) -> std::io::Result<()> {
 }
 
 pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    debug!("copy_file {:?} {:?}", source, target);
+
     copy(source, target)?;
 
     copy_metadata(source, target)

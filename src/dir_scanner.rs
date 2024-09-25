@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
-use tracing::debug;
+use tracing::{debug, error, info};
 
 use crate::copy::copy_directory;
 use crate::file_copier::FileCopyPool;
@@ -64,6 +64,7 @@ impl DirScanPool {
                 });
                 threads.push((thread, cond));
             }
+            info!("Created {} dir scanner threads", num_threads);
         }
 
         pool
@@ -84,6 +85,7 @@ impl DirScanPool {
     pub fn join(&self) {
         let enqueued = &*self.enqueued;
         loop {
+            debug!("dir scanner enqueued {}", enqueued.load(Ordering::Relaxed));
             if enqueued.load(Ordering::Relaxed) > 0 {
                 sleep(Duration::from_secs(5));
             }
@@ -129,7 +131,7 @@ fn dir_scan_thread(
         let source_dir = match read_dir(source.join(&path)) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("Error reading directory: {}", e);
+                error!("Error reading directory: {}", e);
                 return;
             }
         };
@@ -138,24 +140,26 @@ fn dir_scan_thread(
             let source_entry = match source_entry {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("Error reading directory entry: {}", e);
+                    error!("Error reading directory entry: {}", e);
                     return;
                 }
             };
+            debug!("source path={:?} file_name={:?}", source_entry.path(), source_entry.file_name());
             let source_path = source_entry.path();
             let source_metadata = match source_entry.metadata() {
                 Ok(m) => m,
                 Err(e) => {
-                    eprintln!("Error reading source entry: {}", e);
+                    error!("Error reading source entry: {}", e);
                     return;
                 }
             };
 
             let target_path = target.join(&path);
+            debug!("target_path {:?}", target_path);
 
             let copy = || {
                 if let Err(e) = copy_directory(&source_path, &target_path) {
-                    eprintln!("Error copying directory: {}", e);
+                    error!("Error copying directory: {}", e);
                     return;
                 }
 
@@ -177,20 +181,21 @@ fn dir_scan_thread(
                         copy();
                     }
                     Err(e) => {
-                        eprintln!("Error reading target entry: {}", e);
+                        error!("Error reading target entry: {}", e);
                         return;
                     }
                     Ok(target_metadata) => {
                         // Compare metadata
                         if source_metadata.file_type() != target_metadata.file_type() {
+                            debug!("Different file type, removing target {:?}", target_path);
                             if target_metadata.is_dir() {
                                 if let Err(e) = remove_dir_all(&target_path) {
-                                    eprintln!("Error removing target directory: {}", e);
+                                    error!("Error removing target directory: {}", e);
                                     return;
                                 }
                             } else {
                                 if let Err(e) = remove_file(&target_path) {
-                                    eprintln!("Error removing target entry: {}", e);
+                                    error!("Error removing target entry: {}", e);
                                     return;
                                 }
                             }
@@ -199,7 +204,7 @@ fn dir_scan_thread(
                         } else if source_metadata.is_dir() {
                             if !metadata_equal(&source_metadata, &target_metadata) {
                                 if let Err(e) = copy_directory(&source_path, &target_path) {
-                                    eprintln!("Error copying directory: {}", e);
+                                    error!("Error copying directory: {}", e);
                                     return;
                                 }
                             }
@@ -220,7 +225,7 @@ fn dir_scan_thread(
         let target_dir = match read_dir(target.join(&path)) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("Error reading target directory: {}", e);
+                error!("Error reading target directory: {}", e);
                 return;
             }
         };
@@ -229,7 +234,7 @@ fn dir_scan_thread(
             let target_entry = match target_entry {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("Error reading target directory entry: {}", e);
+                    error!("Error reading target directory entry: {}", e);
                     return;
                 }
             };
@@ -237,19 +242,21 @@ fn dir_scan_thread(
                 let target_metadata = match target_entry.metadata() {
                     Ok(m) => m,
                     Err(e) => {
-                        eprintln!("Error reading target directory entry: {}", e);
+                        error!("Error reading target directory entry: {}", e);
                         return;
                     }
                 };
 
                 if target_metadata.is_dir() {
+                    debug!("Removing directory, not in source: {:?}", target_entry.path());
                     if let Err(e) = remove_dir_all(target_entry.path()) {
-                        eprintln!("Error removing target directory: {}", e);
+                        error!("Error removing target directory: {}", e);
                         return;
                     }
                 } else {
+                    debug!("Removing file, not in source: {:?}", target_entry.path());
                     if let Err(e) = remove_file(target_entry.path()) {
-                        eprintln!("Error removing target entry: {}", e);
+                        error!("Error removing target entry: {}", e);
                         return;
                     }
                 }
@@ -263,12 +270,14 @@ fn dir_scan_thread(
             Err(_) => {
                 // Check if we should stop
                 if stop_condition.load(Ordering::Relaxed) {
+                    debug!("Stop condition true, exiting thread");
                     return;
                 }
                 continue;
             }
         };
 
+        debug!("Scanning {:?}, check_target={}", path, check_target);
         dir_scan(path, check_target);
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
