@@ -214,8 +214,10 @@ fn dir_scan_thread(
                             // Recurse
                             pool.add(entry_path.clone());
                         } else {
-                            // Copy non-directory entry (file, link, ...)
-                            file_copier.add(entry_path.clone());
+                            if !metadata_equal(&source_metadata, &target_metadata) {
+                                // Copy non-directory entry (file, link, ...)
+                                file_copier.add(entry_path.clone());
+                            }
                         }
                     }
                 };
