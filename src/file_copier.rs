@@ -70,9 +70,10 @@ impl FileCopyPool {
         let enqueued = &*self.enqueued;
         loop {
             debug!("file copier enqueued {}", enqueued.load(Ordering::Relaxed));
-            if enqueued.load(Ordering::Relaxed) > 0 {
-                sleep(Duration::from_secs(5));
+            if enqueued.load(Ordering::Relaxed) == 0 {
+                return;
             }
+            sleep(Duration::from_secs(2));
         }
     }
 }
