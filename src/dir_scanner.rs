@@ -173,7 +173,6 @@ fn dir_scan_thread(
 
                     pool.add_no_check(entry_path.clone());
                 } else {
-                    pool.stats.add_queued_copy_entries(1);
                     file_copier.add(entry_path.clone());
                 }
             };
@@ -225,7 +224,6 @@ fn dir_scan_thread(
                             pool.add(entry_path.clone());
                         } else if !metadata_equal(&source_metadata, &target_metadata) {
                             // Copy non-directory entry (file, link, ...)
-                            pool.stats.add_queued_copy_entries(1);
                             file_copier.add(entry_path.clone());
                         } else {
                             pool.stats.add_skipped_entries(1);

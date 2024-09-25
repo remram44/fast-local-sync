@@ -65,6 +65,7 @@ impl FileCopyPool {
     pub fn add(&self, path: PathBuf) {
         debug!("copier add {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
+        self.stats.add_queued_copy_entries(1);
         self.queue_send.send(path).unwrap();
     }
 
