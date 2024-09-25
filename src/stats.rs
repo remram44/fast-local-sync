@@ -10,6 +10,7 @@ pub struct Stats {
     skipped_entries: AtomicUsize,
     queued_copy_entries: AtomicUsize,
     copied_entries: AtomicUsize,
+    errors: AtomicUsize,
 }
 
 impl Stats {
@@ -21,6 +22,7 @@ impl Stats {
             skipped_entries: AtomicUsize::new(0),
             queued_copy_entries: AtomicUsize::new(0),
             copied_entries: AtomicUsize::new(0),
+            errors: AtomicUsize::new(0),
         });
 
         {
@@ -40,22 +42,24 @@ impl Stats {
         loop {
             thread::sleep(Duration::from_secs(10));
 
-            i += 1;
-            if i >= 30 {
-                i = 1;
+            if i % 30 == 0 {
+                i = 0;
                 eprintln!(
-                    "SCANNED   \
-                     SKIPPED   \
-                     QUEUED    \
-                     COPIED"
+                    "SCANNED     \
+                     SKIPPED     \
+                     QUEUED      \
+                     COPIED      \
+                     ERRORS"
                 );
             }
+            i += 1;
             eprintln!(
-                "{:>9} {:>9} {:>9} {:>9}",
-                self.scanned_entries(),
-                self.skipped_entries(),
-                self.queued_copy_entries(),
-                self.copied_entries(),
+                "{:>10}  {:>10}  {:>10}  {:>10}  {:>10}",
+                self.scanned_entries.load(Ordering::Relaxed),
+                self.skipped_entries.load(Ordering::Relaxed),
+                self.queued_copy_entries.load(Ordering::Relaxed),
+                self.copied_entries.load(Ordering::Relaxed),
+                self.errors.load(Ordering::Relaxed),
             )
         }
     }
@@ -64,31 +68,19 @@ impl Stats {
         self.scanned_entries.fetch_add(count, Ordering::Relaxed);
     }
 
-    pub fn scanned_entries(&self) -> usize {
-        self.scanned_entries.load(Ordering::Relaxed)
-    }
-
     pub fn add_skipped_entries(&self, count: usize) {
         self.skipped_entries.fetch_add(count, Ordering::Relaxed);
-    }
-
-    pub fn skipped_entries(&self) -> usize {
-        self.skipped_entries.load(Ordering::Relaxed)
     }
 
     pub fn add_queued_copy_entries(&self, count: usize) {
         self.queued_copy_entries.fetch_add(count, Ordering::Relaxed);
     }
 
-    pub fn queued_copy_entries(&self) -> usize {
-        self.queued_copy_entries.load(Ordering::Relaxed)
-    }
-
     pub fn add_copied_entries(&self, count: usize) {
         self.copied_entries.fetch_add(count, Ordering::Relaxed);
     }
 
-    pub fn copied_entries(&self) -> usize {
-        self.copied_entries.load(Ordering::Relaxed)
+    pub fn add_errors(&self, count: usize) {
+        self.errors.fetch_add(count, Ordering::Relaxed);
     }
 }

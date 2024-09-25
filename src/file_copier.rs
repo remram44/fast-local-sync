@@ -17,6 +17,7 @@ pub struct FileCopyPool {
     queue_recv: Receiver<PathBuf>,
     enqueued: Arc<AtomicUsize>,
     threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
+    stats: Arc<Stats>,
 }
 
 impl FileCopyPool {
@@ -37,6 +38,7 @@ impl FileCopyPool {
             queue_recv: recv,
             enqueued,
             threads: Mutex::new(Vec::new()),
+            stats,
         });
 
         // Start threads
@@ -104,6 +106,8 @@ fn file_copy_thread(
         if let Err(e) = copy_file(&source_path, &target_path) {
             error!("Error copying file: {}", e);
         }
+
+        pool.stats.add_copied_entries(1);
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }

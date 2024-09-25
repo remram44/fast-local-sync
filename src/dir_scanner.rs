@@ -133,6 +133,7 @@ fn dir_scan_thread(
             Ok(d) => d,
             Err(e) => {
                 error!("Error reading directory: {}", e);
+                pool.stats.add_errors(1);
                 return;
             }
         };
@@ -142,6 +143,7 @@ fn dir_scan_thread(
                 Ok(s) => s,
                 Err(e) => {
                     error!("Error reading directory entry: {}", e);
+                    pool.stats.add_errors(1);
                     return;
                 }
             };
@@ -151,10 +153,12 @@ fn dir_scan_thread(
                 Ok(m) => m,
                 Err(e) => {
                     error!("Error reading source entry: {}", e);
+                    pool.stats.add_errors(1);
                     return;
                 }
             };
             let entry_path = dir_path.join(source_entry.file_name());
+            seen_source_entries.insert(source_entry.file_name().to_owned());
 
             let target_path = target.join(&entry_path);
             debug!("target_path {:?}", target_path);
@@ -163,11 +167,13 @@ fn dir_scan_thread(
                 if source_metadata.is_dir() {
                     if let Err(e) = copy_directory(&source_path, &target_path) {
                         error!("Error copying directory: {}", e);
+                        pool.stats.add_errors(1);
                         return;
                     }
 
                     pool.add_no_check(entry_path.clone());
                 } else {
+                    pool.stats.add_queued_copy_entries(1);
                     file_copier.add(entry_path.clone());
                 }
             };
@@ -185,7 +191,8 @@ fn dir_scan_thread(
                     }
                     Err(e) => {
                         error!("Error reading target entry: {}", e);
-                        return;
+                        pool.stats.add_errors(1);
+                        continue;
                     }
                     Ok(target_metadata) => {
                         // Compare metadata
@@ -194,12 +201,14 @@ fn dir_scan_thread(
                             if target_metadata.is_dir() {
                                 if let Err(e) = remove_dir_all(&target_path) {
                                     error!("Error removing target directory: {}", e);
-                                    return;
+                                    pool.stats.add_errors(1);
+                                    continue;
                                 }
                             } else {
                                 if let Err(e) = remove_file(&target_path) {
                                     error!("Error removing target entry: {}", e);
-                                    return;
+                                    pool.stats.add_errors(1);
+                                    continue;
                                 }
                             }
                             // Target no longer exists, copy
@@ -208,22 +217,24 @@ fn dir_scan_thread(
                             if !metadata_equal(&source_metadata, &target_metadata) {
                                 if let Err(e) = copy_directory(&source_path, &target_path) {
                                     error!("Error copying directory: {}", e);
-                                    return;
+                                    pool.stats.add_errors(1);
+                                    continue;
                                 }
                             }
                             // Recurse
                             pool.add(entry_path.clone());
+                        } else if !metadata_equal(&source_metadata, &target_metadata) {
+                            // Copy non-directory entry (file, link, ...)
+                            pool.stats.add_queued_copy_entries(1);
+                            file_copier.add(entry_path.clone());
                         } else {
-                            if !metadata_equal(&source_metadata, &target_metadata) {
-                                // Copy non-directory entry (file, link, ...)
-                                file_copier.add(entry_path.clone());
-                            }
+                            pool.stats.add_skipped_entries(1);
                         }
                     }
                 };
             }
 
-            seen_source_entries.insert(source_entry.file_name().to_owned());
+            pool.stats.add_scanned_entries(1);
         }
 
         // Remove unseen entries in target
@@ -231,6 +242,7 @@ fn dir_scan_thread(
             Ok(d) => d,
             Err(e) => {
                 error!("Error reading target directory: {}", e);
+                pool.stats.add_errors(1);
                 return;
             }
         };
@@ -240,6 +252,7 @@ fn dir_scan_thread(
                 Ok(s) => s,
                 Err(e) => {
                     error!("Error reading target directory entry: {}", e);
+                    pool.stats.add_errors(1);
                     return;
                 }
             };
@@ -248,6 +261,7 @@ fn dir_scan_thread(
                     Ok(m) => m,
                     Err(e) => {
                         error!("Error reading target directory entry: {}", e);
+                        pool.stats.add_errors(1);
                         return;
                     }
                 };
@@ -256,13 +270,15 @@ fn dir_scan_thread(
                     debug!("Removing directory, not in source: {:?}", target_entry.path());
                     if let Err(e) = remove_dir_all(target_entry.path()) {
                         error!("Error removing target directory: {}", e);
-                        return;
+                        pool.stats.add_errors(1);
+                        continue;
                     }
                 } else {
                     debug!("Removing file, not in source: {:?}", target_entry.path());
                     if let Err(e) = remove_file(target_entry.path()) {
                         error!("Error removing target entry: {}", e);
-                        return;
+                        pool.stats.add_errors(1);
+                        continue;
                     }
                 }
             }
