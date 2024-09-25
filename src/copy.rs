@@ -1,6 +1,6 @@
 use filetime::{FileTime, set_symlink_file_times};
 use std::io::ErrorKind;
-use std::fs::{copy, create_dir, read_link, set_permissions, symlink_metadata};
+use std::fs::{copy, create_dir, read_link, remove_file, set_permissions, symlink_metadata};
 use std::os::unix::fs::{MetadataExt, lchown, symlink};
 use std::path::Path;
 use tracing::{debug, warn};
@@ -42,8 +42,15 @@ pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
 
     if source_metadata.is_symlink() {
         let link = read_link(source)?;
+        debug!("copy_file symlink {:?} -> {:?}", link, target);
+        match remove_file(target) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::NotFound => {},
+            Err(e) => return Err(e),
+        }
         symlink(link, target)?;
     } else if source_metadata.is_file() {
+        debug!("copy_file regular file {:?} -> {:?}", source, target);
         copy(source, target)?;
     } else {
         warn!("Don't know how to copy entry that's not a symlink or a file: {:?}", source);
