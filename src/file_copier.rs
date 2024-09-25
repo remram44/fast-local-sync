@@ -41,6 +41,12 @@ impl FileCopyPool {
             stats,
         });
 
+        #[cfg(feature = "acl")]
+        info!("Will copy ACLs");
+
+        #[cfg(feature = "attr")]
+        info!("Will copy extended attributes");
+
         // Start threads
         {
             let mut threads = pool.threads.lock().unwrap();
