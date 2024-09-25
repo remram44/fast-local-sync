@@ -126,10 +126,10 @@ fn dir_scan_thread(
     let source = &pool.source;
     let target = &pool.target;
 
-    let dir_scan = |path: PathBuf, check_target: bool| {
+    let dir_scan = |dir_path: PathBuf, check_target: bool| {
         let mut seen_source_entries = HashSet::<OsString>::new();
 
-        let source_dir = match read_dir(source.join(&path)) {
+        let source_dir = match read_dir(source.join(&dir_path)) {
             Ok(d) => d,
             Err(e) => {
                 error!("Error reading directory: {}", e);
@@ -154,31 +154,33 @@ fn dir_scan_thread(
                     return;
                 }
             };
+            let entry_path = dir_path.join(source_entry.file_name());
 
-            let target_path = target.join(&path);
+            let target_path = target.join(&entry_path);
             debug!("target_path {:?}", target_path);
 
             let copy = || {
-                if let Err(e) = copy_directory(&source_path, &target_path) {
-                    error!("Error copying directory: {}", e);
-                    return;
-                }
-
                 if source_metadata.is_dir() {
-                    pool.add_no_check(path.clone());
+                    if let Err(e) = copy_directory(&source_path, &target_path) {
+                        error!("Error copying directory: {}", e);
+                        return;
+                    }
+
+                    pool.add_no_check(entry_path.clone());
                 } else {
-                    file_copier.add(path.clone());
+                    file_copier.add(entry_path.clone());
                 }
             };
 
             if !check_target {
                 // Fast path: if the subtree doesn't exist on the target,
                 // no need to check each entry
-                copy()
+                copy();
             } else {
                 match symlink_metadata(&target_path) {
                     Err(e) if e.kind() == ErrorKind::NotFound => {
                         // Target does not exist, copy
+                        debug!("Target does not exist, copy {:?}", entry_path);
                         copy();
                     }
                     Err(e) => {
@@ -210,10 +212,10 @@ fn dir_scan_thread(
                                 }
                             }
                             // Recurse
-                            pool.add(path.clone());
+                            pool.add(entry_path.clone());
                         } else {
                             // Copy non-directory entry (file, link, ...)
-                            file_copier.add(path.clone());
+                            file_copier.add(entry_path.clone());
                         }
                     }
                 };
@@ -223,7 +225,7 @@ fn dir_scan_thread(
         }
 
         // Remove unseen entries in target
-        let target_dir = match read_dir(target.join(&path)) {
+        let target_dir = match read_dir(target.join(&dir_path)) {
             Ok(d) => d,
             Err(e) => {
                 error!("Error reading target directory: {}", e);

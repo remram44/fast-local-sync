@@ -100,7 +100,7 @@ fn main() {
     );
 
     // Enqueue work
-    dir_scan_pool.add("/".into());
+    dir_scan_pool.add("".into());
 
     // Wait until done
     dir_scan_pool.join();
