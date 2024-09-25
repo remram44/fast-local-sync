@@ -17,7 +17,18 @@ fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
     let mtime = FileTime::from_last_modification_time(&metadata);
     set_symlink_file_times(target, mtime, mtime)?;
 
-    // TODO: Extended ACLs, extended attrs
+    #[cfg(feature = "acl")]
+    {
+        use exacl::{AclOption, getfacl, setfacl};
+
+        let acl = getfacl(source, Some(AclOption::ACCESS_ACL))?;
+        setfacl(&[target], &acl, Some(AclOption::ACCESS_ACL))?;
+
+        let default_acl = getfacl(source, Some(AclOption::DEFAULT_ACL))?;
+        setfacl(&[target], &default_acl, Some(AclOption::DEFAULT_ACL))?;
+    }
+
+    // TODO: Extended attrs
 
     Ok(())
 }
