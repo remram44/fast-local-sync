@@ -44,7 +44,7 @@ impl Stats {
 
             if i % 30 == 0 {
                 i = 0;
-                eprintln!(
+                println!(
                     "SCANNED     \
                      SKIPPED     \
                      QUEUED      \
@@ -53,7 +53,7 @@ impl Stats {
                 );
             }
             i += 1;
-            eprintln!(
+            println!(
                 "{:>10}  {:>10}  {:>10}  {:>10}  {:>10}",
                 self.scanned_entries.load(Ordering::Relaxed),
                 self.skipped_entries.load(Ordering::Relaxed),
