@@ -9,8 +9,16 @@ repository = "https://github.com/remram44/fast-local-sync"
 keywords = ["sync", "copy", "filesystem", "rsync"]
 license = "MIT"
 
+[features]
+default = ["acl", "attr"]
+acl = ["dep:exacl"]
+attr = ["dep:xattr"]
+
 [dependencies]
 crossbeam = "0.8"
 filetime = "0.2"
 pretty_env_logger = "0.5"
 tracing = { version = "0.1", default-features = false, features = ["log", "std"] }
+
+exacl = { version = "0.12", optional = true }
+xattr = { version = "1.3", optional = true }
