@@ -31,23 +31,17 @@ fn main() {
     pretty_env_logger::init();
 
     // Parse command line
-    let mut entries = None;
-    let mut size = None;
     let mut source = None;
     let mut target = None;
     let mut threads = None;
 
     let mut args = args_os();
     args.next();
-    let usage = "Usage: fast-local-sync [--entries TOTAL_ENTRIES] [--size TOTAL_SIZE] [--threads NUM_THREADS] SOURCE DESTINATION";
+    let usage = "Usage: fast-local-sync [--threads NUM_THREADS] SOURCE DESTINATION";
     while let Some(arg) = args.next() {
         if &arg == "--help" {
             println!("{}", usage);
             exit(0);
-        } else if &arg == "--entries" {
-            entries = Some(parse_num_option(args.next(), "--entries"));
-        } else if &arg == "--size" {
-            size = Some(parse_num_option(args.next(), "--size"));
         } else if &arg == "--threads" {
             threads = Some(parse_num_option(args.next(), "--threads"));
         } else {
@@ -82,7 +76,7 @@ fn main() {
     };
 
     // Initialize statistics
-    let stats = stats::Stats::new(entries, size);
+    let stats = stats::Stats::new();
 
     // Create worker pools
     let file_copy_pool = file_copier::FileCopyPool::new(

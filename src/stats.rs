@@ -4,8 +4,6 @@ use std::thread;
 use std::time::Duration;
 
 pub struct Stats {
-    total_entries: Option<usize>,
-    total_size: Option<usize>,
     scanned_entries: AtomicUsize,
     skipped_entries: AtomicUsize,
     queued_copy_entries: AtomicUsize,
@@ -14,10 +12,8 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new(total_entries: Option<usize>, total_size: Option<usize>) -> Arc<Stats> {
+    pub fn new() -> Arc<Stats> {
         let stats = Arc::new(Stats {
-            total_entries,
-            total_size,
             scanned_entries: AtomicUsize::new(0),
             skipped_entries: AtomicUsize::new(0),
             queued_copy_entries: AtomicUsize::new(0),
