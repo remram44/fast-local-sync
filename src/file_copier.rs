@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::sleep;
-use std::time::Duration;
 use std::thread::JoinHandle;
+use std::time::Duration;
 use tracing::{debug, error, info};
 
 use crate::copy::copy_file;

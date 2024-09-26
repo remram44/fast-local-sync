@@ -7,8 +7,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
+use std::time::Duration;
 use tracing::{debug, error, info};
 
 use crate::copy::{copy_directory, copy_extended_metadata};
@@ -233,7 +233,7 @@ fn dir_scan_thread(
                             pool.stats.add_skipped_entries(1);
                         }
                     }
-                };
+                }
             }
 
             pool.stats.add_scanned_entries(1);

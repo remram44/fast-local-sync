@@ -1,6 +1,6 @@
 use filetime::{FileTime, set_symlink_file_times};
-use std::io::ErrorKind;
 use std::fs::{copy, create_dir, read_link, remove_file, set_permissions, symlink_metadata};
+use std::io::ErrorKind;
 use std::os::unix::fs::{MetadataExt, lchown, symlink};
 use std::path::Path;
 use tracing::{debug, warn};
@@ -83,7 +83,7 @@ pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
         debug!("copy_file symlink {:?} -> {:?}", link, target);
         match remove_file(target) {
             Ok(()) => {}
-            Err(e) if e.kind() == ErrorKind::NotFound => {},
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
             Err(e) => return Err(e),
         }
         symlink(link, target)?;

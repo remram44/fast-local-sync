@@ -1,5 +1,5 @@
-mod dir_scanner;
 mod copy;
+mod dir_scanner;
 mod file_copier;
 mod stats;
 
