@@ -5,18 +5,8 @@ use std::os::unix::fs::{MetadataExt, lchown, symlink};
 use std::path::Path;
 use tracing::{debug, warn};
 
-fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
-    // Get metadata of source
-    let metadata = symlink_metadata(source)?;
-
-    // Copy attributes
-    lchown(target, Some(metadata.uid()), Some(metadata.gid()))?;
-    if !metadata.is_symlink() {
-        set_permissions(target, metadata.permissions())?;
-    }
-    let mtime = FileTime::from_last_modification_time(&metadata);
-    set_symlink_file_times(target, mtime, mtime)?;
-
+// Metadata copied unconditionally
+pub fn copy_extended_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
     #[cfg(feature = "acl")]
     {
         use exacl::{AclOption, getfacl, setfacl};
@@ -48,6 +38,24 @@ fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
             }
         }
     }
+
+    Ok(())
+}
+
+// Metadata copied when the file is copied
+fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
+    // Get metadata of source
+    let metadata = symlink_metadata(source)?;
+
+    // Copy attributes
+    lchown(target, Some(metadata.uid()), Some(metadata.gid()))?;
+    if !metadata.is_symlink() {
+        set_permissions(target, metadata.permissions())?;
+    }
+    let mtime = FileTime::from_last_modification_time(&metadata);
+    set_symlink_file_times(target, mtime, mtime)?;
+
+    copy_extended_metadata(source, target)?;
 
     Ok(())
 }

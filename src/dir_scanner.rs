@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
 use tracing::{debug, error, info};
 
-use crate::copy::copy_directory;
+use crate::copy::{copy_directory, copy_extended_metadata};
 use crate::file_copier::FileCopyPool;
 use crate::stats::Stats;
 
@@ -226,6 +226,10 @@ fn dir_scan_thread(
                             // Copy non-directory entry (file, link, ...)
                             file_copier.add(entry_path.clone());
                         } else {
+                            // Copy extended metadata
+                            if let Err(e) = copy_extended_metadata(&source_path, &target_path) {
+                                error!("Error copying extended metadata: {}", e);
+                            }
                             pool.stats.add_skipped_entries(1);
                         }
                     }
