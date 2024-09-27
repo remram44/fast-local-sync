@@ -32,6 +32,72 @@ impl Stats {
         stats
     }
 
+    #[cfg(feature = "metrics")]
+    pub fn serve_prometheus(self: &Arc<Self>, port: u16) {
+        use tokio::runtime::Builder;
+        use tracing::info;
+        use warp::Filter;
+
+        let stats = self.clone();
+
+        std::thread::spawn(move || {
+            info!("Starting Prometheus HTTP server on port {}", port);
+
+            let rt = Builder::new_current_thread().enable_all().build().unwrap();
+            rt.block_on(async move {
+                let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
+                let routes = warp::path("metrics").map(move || {
+                    use std::io::Write;
+
+                    let mut buffer = vec![];
+
+                    write!(
+                        &mut buffer,
+                        "HELP sync_scanned_entries Total number of entries scanned.\n\
+                        TYPE sync_scanned_entries counter\n\
+                        sync_scanned_entries {}\n",
+                        stats.scanned_entries.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
+                        "HELP sync_skipped_entries Total number of entries skipped because they were up-to-date.\n\
+                        TYPE sync_skipped_entries counter\n\
+                        sync_skipped_entries {}\n",
+                        stats.skipped_entries.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
+                        "HELP sync_queued_copy_entries Total number of entries added to the queue for copy.\n\
+                        TYPE sync_queued_copy_entries counter\n\
+                        sync_queued_copy_entries {}\n",
+                        stats.queued_copy_entries.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
+                        "HELP sync_copied_entries Total number of files copied.\n\
+                        TYPE sync_copied_entries counter\n\
+                        sync_copied_entries {}\n",
+                        stats.copied_entries.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
+                        "HELP sync_errors Total number of errors during this sync operation.\n\
+                        TYPE sync_errors counter\n\
+                        sync_errors {}\n",
+                        stats.errors.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    buffer
+                });
+                warp::serve(routes).run(addr).await;
+            });
+        });
+    }
+
     fn print_thread(&self) {
         let mut i = 0;
 
