@@ -53,40 +53,40 @@ impl Stats {
 
                     write!(
                         &mut buffer,
-                        "HELP sync_scanned_entries Total number of entries scanned.\n\
-                        TYPE sync_scanned_entries counter\n\
+                        "# HELP sync_scanned_entries Total number of entries scanned.\n\
+                        # TYPE sync_scanned_entries counter\n\
                         sync_scanned_entries {}\n",
                         stats.scanned_entries.load(Ordering::Relaxed),
                     ).unwrap();
 
                     write!(
                         &mut buffer,
-                        "HELP sync_skipped_entries Total number of entries skipped because they were up-to-date.\n\
-                        TYPE sync_skipped_entries counter\n\
+                        "# HELP sync_skipped_entries Total number of entries skipped because they were up-to-date.\n\
+                        # TYPE sync_skipped_entries counter\n\
                         sync_skipped_entries {}\n",
                         stats.skipped_entries.load(Ordering::Relaxed),
                     ).unwrap();
 
                     write!(
                         &mut buffer,
-                        "HELP sync_queued_copy_entries Total number of entries added to the queue for copy.\n\
-                        TYPE sync_queued_copy_entries counter\n\
+                        "# HELP sync_queued_copy_entries Total number of entries added to the queue for copy.\n\
+                        # TYPE sync_queued_copy_entries counter\n\
                         sync_queued_copy_entries {}\n",
                         stats.queued_copy_entries.load(Ordering::Relaxed),
                     ).unwrap();
 
                     write!(
                         &mut buffer,
-                        "HELP sync_copied_entries Total number of files copied.\n\
-                        TYPE sync_copied_entries counter\n\
+                        "# HELP sync_copied_entries Total number of files copied.\n\
+                        # TYPE sync_copied_entries counter\n\
                         sync_copied_entries {}\n",
                         stats.copied_entries.load(Ordering::Relaxed),
                     ).unwrap();
 
                     write!(
                         &mut buffer,
-                        "HELP sync_errors Total number of errors during this sync operation.\n\
-                        TYPE sync_errors counter\n\
+                        "# HELP sync_errors Total number of errors during this sync operation.\n\
+                        # TYPE sync_errors counter\n\
                         sync_errors {}\n",
                         stats.errors.load(Ordering::Relaxed),
                     ).unwrap();
