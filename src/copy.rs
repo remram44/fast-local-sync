@@ -23,11 +23,17 @@ pub fn copy_extended_metadata(source: &Path, target: &Path, is_dir: bool) -> std
     #[cfg(feature = "attr")]
     {
         use std::collections::HashSet;
+        use std::os::unix::ffi::OsStrExt;
         use xattr::{get, list, remove, set};
 
         let mut seen_attrs = HashSet::new();
 
         for name in list(source)? {
+            let name_b = &name.as_bytes();
+            if name_b.len() >= 7 && &name_b[0..7] == b"system." {
+                continue;
+            }
+
             if let Some(value) = get(target, &name)? {
                 set(target, &name, &value)?;
                 seen_attrs.insert(name);
@@ -35,6 +41,11 @@ pub fn copy_extended_metadata(source: &Path, target: &Path, is_dir: bool) -> std
         }
 
         for name in list(target)? {
+            let name_b = &name.as_bytes();
+            if name_b.len() >= 7 && &name_b[0..7] == b"system." {
+                continue;
+            }
+
             if !seen_attrs.contains(&name) {
                 remove(target, name)?;
             }
