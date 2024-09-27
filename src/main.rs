@@ -75,6 +75,11 @@ fn main() {
         }
     };
 
+    if !target.exists() {
+        eprintln!("Destination directory does not exist!");
+        exit(1);
+    }
+
     // Initialize statistics
     let stats = stats::Stats::new();
 
