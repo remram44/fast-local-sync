@@ -6,7 +6,7 @@ use std::path::Path;
 use tracing::{debug, warn};
 
 // Metadata copied unconditionally
-pub fn copy_extended_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
+pub fn copy_extended_metadata(source: &Path, target: &Path, is_dir: bool) -> std::io::Result<()> {
     #[cfg(feature = "acl")]
     {
         use exacl::{AclOption, getfacl, setfacl};
@@ -14,8 +14,10 @@ pub fn copy_extended_metadata(source: &Path, target: &Path) -> std::io::Result<(
         let acl = getfacl(source, Some(AclOption::ACCESS_ACL))?;
         setfacl(&[target], &acl, Some(AclOption::ACCESS_ACL))?;
 
-        let default_acl = getfacl(source, Some(AclOption::DEFAULT_ACL))?;
-        setfacl(&[target], &default_acl, Some(AclOption::DEFAULT_ACL))?;
+        if is_dir {
+            let default_acl = getfacl(source, Some(AclOption::DEFAULT_ACL))?;
+            setfacl(&[target], &default_acl, Some(AclOption::DEFAULT_ACL))?;
+        }
     }
 
     #[cfg(feature = "attr")]
@@ -55,7 +57,7 @@ fn copy_metadata(source: &Path, target: &Path) -> std::io::Result<()> {
     let mtime = FileTime::from_last_modification_time(&metadata);
     set_symlink_file_times(target, mtime, mtime)?;
 
-    copy_extended_metadata(source, target)?;
+    copy_extended_metadata(source, target, metadata.is_dir())?;
 
     Ok(())
 }
