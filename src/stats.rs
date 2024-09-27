@@ -8,6 +8,7 @@ pub struct Stats {
     skipped_entries: AtomicUsize,
     queued_copy_entries: AtomicUsize,
     copied_entries: AtomicUsize,
+    removed_entries: AtomicUsize,
     errors: AtomicUsize,
 }
 
@@ -18,6 +19,7 @@ impl Stats {
             skipped_entries: AtomicUsize::new(0),
             queued_copy_entries: AtomicUsize::new(0),
             copied_entries: AtomicUsize::new(0),
+            removed_entries: AtomicUsize::new(0),
             errors: AtomicUsize::new(0),
         });
 
@@ -85,6 +87,14 @@ impl Stats {
 
                     write!(
                         &mut buffer,
+                        "# HELP sync_removed_entries Total number of entries deleted.\n\
+                        # TYPE sync_removed_entries counter\n\
+                        sync_removed_entries {}\n",
+                        stats.removed_entries.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
                         "# HELP sync_errors Total number of errors during this sync operation.\n\
                         # TYPE sync_errors counter\n\
                         sync_errors {}\n",
@@ -111,16 +121,18 @@ impl Stats {
                      SKIPPED     \
                      QUEUED      \
                      COPIED      \
+                     REMOVED     \
                      ERRORS"
                 );
             }
             i += 1;
             println!(
-                "{:>10}  {:>10}  {:>10}  {:>10}  {:>10}",
+                "{:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}",
                 self.scanned_entries.load(Ordering::Relaxed),
                 self.skipped_entries.load(Ordering::Relaxed),
                 self.queued_copy_entries.load(Ordering::Relaxed),
                 self.copied_entries.load(Ordering::Relaxed),
+                self.removed_entries.load(Ordering::Relaxed),
                 self.errors.load(Ordering::Relaxed),
             )
         }
@@ -140,6 +152,10 @@ impl Stats {
 
     pub fn add_copied_entries(&self, count: usize) {
         self.copied_entries.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn add_removed_entries(&self, count: usize) {
+        self.removed_entries.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn add_errors(&self, count: usize) {

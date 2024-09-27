@@ -1,7 +1,7 @@
 use crossbeam::channel::{Receiver, Sender, unbounded};
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::fs::{Metadata, read_dir, remove_dir_all, remove_file, symlink_metadata};
+use std::fs::{Metadata, read_dir, remove_dir, remove_file, symlink_metadata};
 use std::io::ErrorKind;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -198,7 +198,7 @@ fn dir_scan_thread(
                         if source_metadata.file_type() != target_metadata.file_type() {
                             debug!("Different file type, removing target {:?}", target_path);
                             if target_metadata.is_dir() {
-                                if let Err(e) = remove_dir_all(&target_path) {
+                                if let Err(e) = remove_dir_recursive(&target_path, &pool.stats) {
                                     error!("Error removing target directory: {}", e);
                                     pool.stats.add_errors(1);
                                     continue;
@@ -270,7 +270,7 @@ fn dir_scan_thread(
 
                 if target_metadata.is_dir() {
                     debug!("Removing directory, not in source: {:?}", target_entry.path());
-                    if let Err(e) = remove_dir_all(target_entry.path()) {
+                    if let Err(e) = remove_dir_recursive(&target_entry.path(), &pool.stats) {
                         error!("Error removing target directory: {}", e);
                         pool.stats.add_errors(1);
                         continue;
@@ -305,4 +305,19 @@ fn dir_scan_thread(
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }
+}
+
+fn remove_dir_recursive(path: &Path, stats: &Stats) -> std::io::Result<()> {
+    for entry in read_dir(path)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            remove_dir_recursive(&entry.path(), stats)?;
+        } else {
+            remove_file(&entry.path())?;
+        }
+        stats.add_removed_entries(1);
+    }
+    remove_dir(path)?;
+    stats.add_removed_entries(1);
+    Ok(())
 }
