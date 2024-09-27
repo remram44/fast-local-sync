@@ -34,7 +34,7 @@ pub fn copy_extended_metadata(source: &Path, target: &Path, is_dir: bool) -> std
                 continue;
             }
 
-            if let Some(value) = get(target, &name)? {
+            if let Some(value) = get(source, &name)? {
                 set(target, &name, &value)?;
                 seen_attrs.insert(name);
             }
