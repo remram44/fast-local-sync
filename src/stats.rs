@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -8,7 +8,9 @@ pub struct Stats {
     skipped_entries: AtomicUsize,
     queued_copy_entries: AtomicUsize,
     copied_entries: AtomicUsize,
+    copied_bytes: AtomicU64,
     removed_entries: AtomicUsize,
+    removed_bytes: AtomicU64,
     errors: AtomicUsize,
 }
 
@@ -19,7 +21,9 @@ impl Stats {
             skipped_entries: AtomicUsize::new(0),
             queued_copy_entries: AtomicUsize::new(0),
             copied_entries: AtomicUsize::new(0),
+            copied_bytes: AtomicU64::new(0),
             removed_entries: AtomicUsize::new(0),
+            removed_bytes: AtomicU64::new(0),
             errors: AtomicUsize::new(0),
         });
 
@@ -87,10 +91,26 @@ impl Stats {
 
                     write!(
                         &mut buffer,
+                        "# HELP sync_copied_bytes Total size of files copied.\n\
+                        # TYPE sync_copied_bytes counter\n\
+                        sync_copied_bytes {}\n",
+                        stats.copied_bytes.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
                         "# HELP sync_removed_entries Total number of entries deleted.\n\
                         # TYPE sync_removed_entries counter\n\
                         sync_removed_entries {}\n",
                         stats.removed_entries.load(Ordering::Relaxed),
+                    ).unwrap();
+
+                    write!(
+                        &mut buffer,
+                        "# HELP sync_removed_bytes Total size of files deleted.\n\
+                        # TYPE sync_removed_bytes counter\n\
+                        sync_removed_bytes {}\n",
+                        stats.removed_bytes.load(Ordering::Relaxed),
                     ).unwrap();
 
                     write!(
@@ -150,12 +170,18 @@ impl Stats {
         self.queued_copy_entries.fetch_add(count, Ordering::Relaxed);
     }
 
-    pub fn add_copied_entries(&self, count: usize) {
+    pub fn add_copied(&self, count: usize, bytes: u64) {
         self.copied_entries.fetch_add(count, Ordering::Relaxed);
+        if bytes != 0 {
+            self.copied_bytes.fetch_add(bytes, Ordering::Relaxed);
+        }
     }
 
-    pub fn add_removed_entries(&self, count: usize) {
+    pub fn add_removed(&self, count: usize, bytes: u64) {
         self.removed_entries.fetch_add(count, Ordering::Relaxed);
+        if bytes != 0 {
+            self.removed_bytes.fetch_add(bytes, Ordering::Relaxed);
+        }
     }
 
     pub fn add_errors(&self, count: usize) {

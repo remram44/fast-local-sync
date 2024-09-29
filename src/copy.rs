@@ -86,12 +86,12 @@ pub fn copy_directory(source: &Path, target: &Path) -> std::io::Result<()> {
     copy_metadata(source, target)
 }
 
-pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
+pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<u64> {
     debug!("copy_file {:?} {:?}", source, target);
 
     let source_metadata = symlink_metadata(source)?;
 
-    if source_metadata.is_symlink() {
+    let size = if source_metadata.is_symlink() {
         let link = read_link(source)?;
         debug!("copy_file symlink {:?} -> {:?}", link, target);
         match remove_file(target) {
@@ -100,9 +100,10 @@ pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
             Err(e) => return Err(e),
         }
         symlink(link, target)?;
+        0
     } else if source_metadata.is_file() {
         debug!("copy_file regular file {:?} -> {:?}", source, target);
-        copy(source, target)?;
+        copy(source, target)?
     } else {
         return Err(std::io::Error::new(
             ErrorKind::Other,
@@ -110,5 +111,7 @@ pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
         ));
     };
 
-    copy_metadata(source, target)
+    copy_metadata(source, target)?;
+
+    Ok(size)
 }

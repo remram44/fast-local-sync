@@ -310,14 +310,16 @@ fn dir_scan_thread(
 fn remove_dir_recursive(path: &Path, stats: &Stats) -> std::io::Result<()> {
     for entry in read_dir(path)? {
         let entry = entry?;
+        let mut size = 0;
         if entry.file_type()?.is_dir() {
             remove_dir_recursive(&entry.path(), stats)?;
         } else {
+            size = entry.metadata()?.len();
             remove_file(&entry.path())?;
-        }
-        stats.add_removed_entries(1);
+        };
+        stats.add_removed(1, size);
     }
     remove_dir(path)?;
-    stats.add_removed_entries(1);
+    stats.add_removed(1, 0);
     Ok(())
 }

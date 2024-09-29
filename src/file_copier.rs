@@ -110,11 +110,12 @@ fn file_copy_thread(
 
         debug!("copy {:?} -> {:?}", source_path, target_path);
 
-        if let Err(e) = copy_file(&source_path, &target_path) {
-            error!("Error copying file: {}", e);
+        match copy_file(&source_path, &target_path) {
+            Err(e) => error!("Error copying file: {}", e),
+            Ok(size) => {
+                pool.stats.add_copied(1, size);
+            }
         }
-
-        pool.stats.add_copied_entries(1);
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }
