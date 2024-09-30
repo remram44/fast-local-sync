@@ -3,7 +3,7 @@ use std::fs::{copy, create_dir, read_link, remove_file, set_permissions, symlink
 use std::io::ErrorKind;
 use std::os::unix::fs::{MetadataExt, lchown, symlink};
 use std::path::Path;
-use tracing::{debug, warn};
+use tracing::debug;
 
 // Metadata copied unconditionally
 pub fn copy_extended_metadata(source: &Path, target: &Path, is_dir: bool) -> std::io::Result<()> {
@@ -104,8 +104,11 @@ pub fn copy_file(source: &Path, target: &Path) -> std::io::Result<()> {
         debug!("copy_file regular file {:?} -> {:?}", source, target);
         copy(source, target)?;
     } else {
-        warn!("Don't know how to copy entry that's not a symlink or a file: {:?}", source);
-    }
+        return Err(std::io::Error::new(
+            ErrorKind::Other,
+            format!("Don't know how to copy entry that's not a symlink or a file: {:?}", source),
+        ));
+    };
 
     copy_metadata(source, target)
 }
