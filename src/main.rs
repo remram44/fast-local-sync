@@ -42,10 +42,22 @@ fn main() {
     let mut args = args_os();
     args.next();
     let usage = format!(
-        "Usage: fast-local-sync [--threads NUM_THREADS] [--print-stats] {}SOURCE DESTINATION",
+        "
+Usage: fast-local-sync [options] SOURCE DESTINATION
+Options:
+    --threads NUM_THREADS
+        Set the number of threads used for scanning and copying files
+    --print-stats
+        Regularly print the statistics to stdout{}
+Environment variables:
+    RUST_LOG
+        Controls the logging level, for example \"info\"
+        or \"fast_local_sync::copy=debug\"",
         {
             #[cfg(feature = "metrics")]
-            {"[--metrics PORT] "}
+            {"
+    --metrics PORT
+        Expose the statistics in Prometheus format on HTTP PORT"}
             #[cfg(not(feature = "metrics"))]
             {""}
         },
