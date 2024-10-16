@@ -209,6 +209,7 @@ fn dir_scan_thread(
                                     pool.stats.add_errors(1);
                                     continue;
                                 }
+                                pool.stats.add_removed(1, target_metadata.len());
                             }
                             // Target no longer exists, copy
                             copy();
@@ -282,6 +283,7 @@ fn dir_scan_thread(
                         pool.stats.add_errors(1);
                         continue;
                     }
+                    pool.stats.add_removed(1, target_metadata.len());
                 }
             }
         }
@@ -310,14 +312,13 @@ fn dir_scan_thread(
 fn remove_dir_recursive(path: &Path, stats: &Stats) -> std::io::Result<()> {
     for entry in read_dir(path)? {
         let entry = entry?;
-        let mut size = 0;
         if entry.file_type()?.is_dir() {
             remove_dir_recursive(&entry.path(), stats)?;
         } else {
-            size = entry.metadata()?.len();
+            let size = entry.metadata()?.len();
             remove_file(&entry.path())?;
+            stats.add_removed(1, size);
         };
-        stats.add_removed(1, size);
     }
     remove_dir(path)?;
     stats.add_removed(1, 0);
