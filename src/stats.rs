@@ -16,7 +16,7 @@ pub struct Stats {
 
 impl Stats {
     pub fn new() -> Arc<Stats> {
-        let stats = Arc::new(Stats {
+        Arc::new(Stats {
             scanned_entries: AtomicUsize::new(0),
             skipped_entries: AtomicUsize::new(0),
             queued_copy_entries: AtomicUsize::new(0),
@@ -25,17 +25,16 @@ impl Stats {
             removed_entries: AtomicUsize::new(0),
             removed_bytes: AtomicU64::new(0),
             errors: AtomicUsize::new(0),
+        })
+
+    }
+
+    pub fn start_print_loop(self: &Arc<Self>) {
+        let stats = self.clone();
+        thread::spawn(move || {
+            let stats = &*stats;
+            stats.print_thread();
         });
-
-        {
-            let stats = stats.clone();
-            thread::spawn(move || {
-                let stats = &*stats;
-                stats.print_thread();
-            });
-        }
-
-        stats
     }
 
     #[cfg(feature = "metrics")]

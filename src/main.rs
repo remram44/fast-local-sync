@@ -34,6 +34,7 @@ fn main() {
     let mut source = None;
     let mut target = None;
     let mut threads = None;
+    let mut print_stats = false;
 
     #[cfg(feature = "metrics")]
     let mut metrics_port = None;
@@ -41,7 +42,7 @@ fn main() {
     let mut args = args_os();
     args.next();
     let usage = format!(
-        "Usage: fast-local-sync [--threads NUM_THREADS] {}SOURCE DESTINATION",
+        "Usage: fast-local-sync [--threads NUM_THREADS] [--print-stats] {}SOURCE DESTINATION",
         {
             #[cfg(feature = "metrics")]
             {"[--metrics PORT] "}
@@ -65,6 +66,8 @@ fn main() {
                 eprintln!("Option --metrics was not compiled in");
                 exit(2);
             }
+        } else if &arg == "--print-stats" {
+            print_stats = true;
         } else {
 
             if source.is_none() {
@@ -104,6 +107,9 @@ fn main() {
 
     // Initialize statistics
     let stats = stats::Stats::new();
+    if print_stats {
+        stats.start_print_loop();
+    }
     #[cfg(feature = "metrics")]
     if let Some(port) = metrics_port {
         stats.serve_prometheus(port);
