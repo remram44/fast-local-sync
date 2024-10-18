@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "fast-local-sync"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "crossbeam",
  "exacl",
