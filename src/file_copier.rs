@@ -112,7 +112,7 @@ fn file_copy_thread(
 
         match copy_file(&source_path, &target_path) {
             Err(e) => {
-                error!("Error copying file: {}", e);
+                error!("Error copying file {:?}: {}", source_path, e);
                 pool.stats.add_errors(1);
             }
             Ok(size) => {
