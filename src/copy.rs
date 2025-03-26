@@ -119,13 +119,20 @@ fn copy_data(source: &Path, source_metadata: &Metadata, target: &Path) -> std::i
         return copy(source, target);
     }
 
-    #[cfg(target_family = "unix")]
+    #[cfg(feature = "unixdev")]
     {
-        use std::os::unix::fs::FileTypeExt;
-        use std::os::unix::net::UnixListener;
+        use nix::sys::stat::{Mode, SFlag, mknod};
+        use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 
         if source_metadata.file_type().is_socket() {
-            UnixListener::bind(target)?;
+            mknod(
+                target,
+                SFlag::S_IFSOCK,
+                Mode::from_bits(
+                    source_metadata.permissions().mode(),
+                ).unwrap(),
+                0,
+            )?;
             return Ok(0);
         }
     }
