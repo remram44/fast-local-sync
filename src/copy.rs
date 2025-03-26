@@ -129,7 +129,7 @@ fn copy_data(source: &Path, source_metadata: &Metadata, target: &Path) -> std::i
                 target,
                 SFlag::S_IFSOCK,
                 Mode::from_bits(
-                    source_metadata.permissions().mode(),
+                    source_metadata.permissions().mode() & 0xFFF,
                 ).unwrap(),
                 0,
             )?;
@@ -147,7 +147,7 @@ fn copy_data(source: &Path, source_metadata: &Metadata, target: &Path) -> std::i
             mkfifo(
                 target,
                 Mode::from_bits(
-                    source_metadata.permissions().mode(),
+                    source_metadata.permissions().mode() & 0xFFF,
                 ).unwrap(),
             )?;
             return Ok(0);
@@ -167,7 +167,7 @@ fn copy_data(source: &Path, source_metadata: &Metadata, target: &Path) -> std::i
                 target,
                 SFlag::S_IFBLK,
                 Mode::from_bits(
-                    source_metadata.permissions().mode(),
+                    source_metadata.permissions().mode() & 0xFFF,
                 ).unwrap(),
                 file_stat.st_dev,
             )?;
@@ -180,7 +180,7 @@ fn copy_data(source: &Path, source_metadata: &Metadata, target: &Path) -> std::i
                 target,
                 SFlag::S_IFCHR,
                 Mode::from_bits(
-                    source_metadata.permissions().mode(),
+                    source_metadata.permissions().mode() & 0xFFF,
                 ).unwrap(),
                 file_stat.st_dev,
             )?;
