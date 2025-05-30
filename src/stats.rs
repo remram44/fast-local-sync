@@ -1,9 +1,13 @@
+#[cfg(feature = "metrics")]
 use lazy_static::lazy_static;
 
+#[cfg(feature = "metrics")]
 use prometheus::{
-    IntCounter, IntGauge, register_int_counter, register_int_gauge,
+    Encoder, IntCounter, IntGauge, TextEncoder, gather,
+    register_int_counter, register_int_gauge,
 };
 
+#[cfg(feature = "metrics")]
 lazy_static! {
     static ref SCANNED_ENTRIES: IntCounter = register_int_counter!(
         "sync_scanned_entries",
@@ -61,8 +65,6 @@ pub fn serve_prometheus(port: u16) {
         rt.block_on(async move {
             let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
             let routes = warp::path("metrics").map(move || {
-                use prometheus::{Encoder, TextEncoder, gather};
-
                 let mut buffer = vec![];
                 let encoder = TextEncoder::new();
                 let metric_families = gather();
@@ -78,42 +80,56 @@ pub fn serve_prometheus(port: u16) {
 }
 
 pub fn add_scanned_entries(count: usize) {
+    #[cfg(feature = "metrics")]
     SCANNED_ENTRIES.inc_by(count as u64);
 }
 
 pub fn add_skipped(count: usize, bytes: u64) {
-    SKIPPED_ENTRIES.inc_by(count as u64);
-    if bytes != 0 {
-        SKIPPED_BYTES.inc_by(bytes);
+    #[cfg(feature = "metrics")]
+    {
+        SKIPPED_ENTRIES.inc_by(count as u64);
+        if bytes != 0 {
+            SKIPPED_BYTES.inc_by(bytes);
+        }
     }
 }
 
 pub fn add_queued_copy_entries(count: usize) {
+    #[cfg(feature = "metrics")]
     QUEUED_COPY_ENTRIES.add(count as i64);
 }
 
 pub fn sub_queued_copy_entries(count: usize) {
+    #[cfg(feature = "metrics")]
     QUEUED_COPY_ENTRIES.sub(count as i64);
 }
 
 pub fn add_copied(count: usize, bytes: u64) {
-    COPIED_ENTRIES.inc_by(count as u64);
-    if bytes != 0 {
-        COPIED_BYTES.inc_by(bytes);
+    #[cfg(feature = "metrics")]
+    {
+        COPIED_ENTRIES.inc_by(count as u64);
+        if bytes != 0 {
+            COPIED_BYTES.inc_by(bytes);
+        }
     }
 }
 
 pub fn add_removed(count: usize, bytes: u64) {
-    REMOVED_ENTRIES.inc_by(count as u64);
-    if bytes != 0 {
-        REMOVED_BYTES.inc_by(bytes);
+    #[cfg(feature = "metrics")]
+    {
+        REMOVED_ENTRIES.inc_by(count as u64);
+        if bytes != 0 {
+            REMOVED_BYTES.inc_by(bytes);
+        }
     }
 }
 
 pub fn add_listed_directory(count: usize) {
+    #[cfg(feature = "metrics")]
     LISTED_DIRECTORIES.inc_by(count as u64);
 }
 
 pub fn add_errors(count: usize) {
+    #[cfg(feature = "metrics")]
     ERRORS.inc_by(count as u64);
 }
