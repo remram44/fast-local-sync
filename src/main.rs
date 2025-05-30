@@ -35,7 +35,6 @@ fn main() {
     let mut target = None;
     let mut threads = None;
     let mut copy_queue = None;
-    let mut print_stats = false;
 
     #[cfg(feature = "metrics")]
     let mut metrics_port = None;
@@ -49,9 +48,7 @@ Options:
     --threads NUM_THREADS
         Set the number of threads used for scanning and copying files (default: 8)
     --copy-queue SIZE
-        Set the maximum number of files queued for copy (default: 4096)
-    --print-stats
-        Regularly print the statistics to stdout{}
+        Set the maximum number of files queued for copy (default: 4096){}
 Environment variables:
     RUST_LOG
         Controls the logging level, for example \"info\"
@@ -83,8 +80,6 @@ Environment variables:
                 eprintln!("Option --metrics was not compiled in");
                 exit(2);
             }
-        } else if &arg == "--print-stats" {
-            print_stats = true;
         } else {
             if source.is_none() {
                 source = Some(arg);
@@ -123,13 +118,9 @@ Environment variables:
     }
 
     // Initialize statistics
-    let stats = stats::Stats::new();
-    if print_stats {
-        stats.start_print_loop();
-    }
     #[cfg(feature = "metrics")]
     if let Some(port) = metrics_port {
-        stats.serve_prometheus(port);
+        stats::serve_prometheus(port);
     }
 
     // Create worker pools
@@ -138,14 +129,12 @@ Environment variables:
         target.as_path(),
         threads,
         copy_queue,
-        stats.clone(),
     );
     let dir_scan_pool = dir_scanner::DirScanPool::new(
         source.as_path(),
         target.as_path(),
         threads,
         file_copy_pool.clone(),
-        stats.clone(),
     );
 
     // Enqueue work

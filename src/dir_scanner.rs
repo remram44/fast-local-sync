@@ -6,13 +6,13 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::thread::{JoinHandle, sleep};
 use std::time::Duration;
+use std::thread::{JoinHandle, sleep};
 use tracing::{debug, error, info};
 
 use crate::copy::{copy_directory, copy_extended_metadata};
 use crate::file_copier::FileCopyPool;
-use crate::stats::Stats;
+use crate::stats;
 
 pub struct DirScanPool {
     source: PathBuf,
@@ -22,7 +22,6 @@ pub struct DirScanPool {
     enqueued: Arc<AtomicUsize>,
     file_copier: Arc<FileCopyPool>,
     threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
-    stats: Arc<Stats>,
 }
 
 impl DirScanPool {
@@ -31,7 +30,6 @@ impl DirScanPool {
         target: &Path,
         num_threads: usize,
         file_copier: Arc<FileCopyPool>,
-        stats: Arc<Stats>,
     ) -> Arc<DirScanPool> {
         // Create work queue
         let (send, recv) = unbounded();
@@ -45,7 +43,6 @@ impl DirScanPool {
             enqueued,
             file_copier,
             threads: Mutex::new(Vec::new()),
-            stats,
         });
 
         // Start threads
@@ -136,7 +133,7 @@ fn dir_scan_thread(
             Ok(d) => d,
             Err(e) => {
                 error!("Error reading directory: {}", e);
-                pool.stats.add_errors(1);
+                stats::add_errors(1);
                 return;
             }
         };
@@ -146,7 +143,7 @@ fn dir_scan_thread(
                 Ok(s) => s,
                 Err(e) => {
                     error!("Error reading directory entry: {}", e);
-                    pool.stats.add_errors(1);
+                    stats::add_errors(1);
                     return;
                 }
             };
@@ -156,7 +153,7 @@ fn dir_scan_thread(
                 Ok(m) => m,
                 Err(e) => {
                     error!("Error reading source entry: {}", e);
-                    pool.stats.add_errors(1);
+                    stats::add_errors(1);
                     return;
                 }
             };
@@ -170,7 +167,7 @@ fn dir_scan_thread(
                 if source_metadata.is_dir() {
                     if let Err(e) = copy_directory(&source_path, &target_path) {
                         error!("Error copying directory: {}", e);
-                        pool.stats.add_errors(1);
+                        stats::add_errors(1);
                         return;
                     }
 
@@ -193,7 +190,7 @@ fn dir_scan_thread(
                     }
                     Err(e) => {
                         error!("Error reading target entry: {}", e);
-                        pool.stats.add_errors(1);
+                        stats::add_errors(1);
                         continue;
                     }
                     Ok(target_metadata) => {
@@ -201,18 +198,18 @@ fn dir_scan_thread(
                         if source_metadata.file_type() != target_metadata.file_type() {
                             debug!("Different file type, removing target {:?}", target_path);
                             if target_metadata.is_dir() {
-                                if let Err(e) = remove_dir_recursive(&target_path, &pool.stats) {
+                                if let Err(e) = remove_dir_recursive(&target_path) {
                                     error!("Error removing target directory: {}", e);
-                                    pool.stats.add_errors(1);
+                                    stats::add_errors(1);
                                     continue;
                                 }
                             } else {
                                 if let Err(e) = remove_file(&target_path) {
                                     error!("Error removing target entry: {}", e);
-                                    pool.stats.add_errors(1);
+                                    stats::add_errors(1);
                                     continue;
                                 }
-                                pool.stats.add_removed(1, target_metadata.len());
+                                stats::add_removed(1, target_metadata.len());
                             }
                             // Target no longer exists, copy
                             copy();
@@ -220,7 +217,7 @@ fn dir_scan_thread(
                             if !metadata_equal(&source_metadata, &target_metadata) {
                                 if let Err(e) = copy_directory(&source_path, &target_path) {
                                     error!("Error copying directory: {}", e);
-                                    pool.stats.add_errors(1);
+                                    stats::add_errors(1);
                                     continue;
                                 }
                             }
@@ -234,16 +231,16 @@ fn dir_scan_thread(
                                 // Copy extended metadata
                                 if let Err(e) = copy_extended_metadata(&source_path, &target_path, source_metadata.is_dir()) {
                                     error!("Error copying extended metadata: {}", e);
-                                    pool.stats.add_errors(1);
+                                    stats::add_errors(1);
                                 }
                             }
-                            pool.stats.add_skipped(1, source_metadata.len());
+                            stats::add_skipped(1, source_metadata.len());
                         }
                     }
                 }
             }
 
-            pool.stats.add_scanned_entries(1);
+            stats::add_scanned_entries(1);
         }
 
         // Remove unseen entries in target
@@ -251,7 +248,7 @@ fn dir_scan_thread(
             Ok(d) => d,
             Err(e) => {
                 error!("Error reading target directory: {}", e);
-                pool.stats.add_errors(1);
+                stats::add_errors(1);
                 return;
             }
         };
@@ -261,7 +258,7 @@ fn dir_scan_thread(
                 Ok(s) => s,
                 Err(e) => {
                     error!("Error reading target directory entry: {}", e);
-                    pool.stats.add_errors(1);
+                    stats::add_errors(1);
                     return;
                 }
             };
@@ -270,26 +267,26 @@ fn dir_scan_thread(
                     Ok(m) => m,
                     Err(e) => {
                         error!("Error reading target directory entry: {}", e);
-                        pool.stats.add_errors(1);
+                        stats::add_errors(1);
                         return;
                     }
                 };
 
                 if target_metadata.is_dir() {
                     debug!("Removing directory, not in source: {:?}", target_entry.path());
-                    if let Err(e) = remove_dir_recursive(&target_entry.path(), &pool.stats) {
+                    if let Err(e) = remove_dir_recursive(&target_entry.path()) {
                         error!("Error removing target directory: {}", e);
-                        pool.stats.add_errors(1);
+                        stats::add_errors(1);
                         continue;
                     }
                 } else {
                     debug!("Removing file, not in source: {:?}", target_entry.path());
                     if let Err(e) = remove_file(target_entry.path()) {
                         error!("Error removing target entry: {}", e);
-                        pool.stats.add_errors(1);
+                        stats::add_errors(1);
                         continue;
                     }
-                    pool.stats.add_removed(1, target_metadata.len());
+                    stats::add_removed(1, target_metadata.len());
                 }
             }
         }
@@ -310,24 +307,24 @@ fn dir_scan_thread(
 
         debug!("Scanning {:?}, check_target={}", path, check_target);
         dir_scan(path, check_target);
-        pool.stats.add_listed_directory(1);
+        stats::add_listed_directory(1);
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
-fn remove_dir_recursive(path: &Path, stats: &Stats) -> std::io::Result<()> {
+fn remove_dir_recursive(path: &Path) -> std::io::Result<()> {
     for entry in read_dir(path)? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            remove_dir_recursive(&entry.path(), stats)?;
+            remove_dir_recursive(&entry.path())?;
         } else {
             let size = entry.metadata()?.len();
             remove_file(&entry.path())?;
-            stats.add_removed(1, size);
+            stats::add_removed(1, size);
         };
     }
     remove_dir(path)?;
-    stats.add_removed(1, 0);
+    stats::add_removed(1, 0);
     Ok(())
 }

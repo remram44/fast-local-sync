@@ -8,7 +8,7 @@ use std::time::Duration;
 use tracing::{debug, error, info};
 
 use crate::copy::copy_file;
-use crate::stats::Stats;
+use crate::stats;
 
 pub struct FileCopyPool {
     source: PathBuf,
@@ -17,7 +17,6 @@ pub struct FileCopyPool {
     queue_recv: Receiver<PathBuf>,
     enqueued: Arc<AtomicUsize>,
     threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
-    stats: Arc<Stats>,
 }
 
 impl FileCopyPool {
@@ -26,7 +25,6 @@ impl FileCopyPool {
         target: &Path,
         num_threads: usize,
         queue_size: usize,
-        stats: Arc<Stats>,
     ) -> Arc<FileCopyPool> {
         // Create work queue
         let (send, recv) = bounded(queue_size);
@@ -39,7 +37,6 @@ impl FileCopyPool {
             queue_recv: recv,
             enqueued,
             threads: Mutex::new(Vec::new()),
-            stats,
         });
 
         #[cfg(feature = "acl")]
@@ -72,7 +69,7 @@ impl FileCopyPool {
     pub fn add(&self, path: PathBuf) {
         debug!("copier add {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
-        self.stats.add_queued_copy_entries(1);
+        stats::add_queued_copy_entries(1);
         self.queue_send.send(path).unwrap();
     }
 
@@ -114,14 +111,14 @@ fn file_copy_thread(
         match copy_file(&source_path, &target_path) {
             Err(e) => {
                 error!("Error copying file {:?}: {}", source_path, e);
-                pool.stats.add_errors(1);
+                stats::add_errors(1);
             }
             Ok(size) => {
-                pool.stats.add_copied(1, size);
+                stats::add_copied(1, size);
             }
         }
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
-        pool.stats.sub_queued_copy_entries(1);
+        stats::sub_queued_copy_entries(1);
     }
 }
