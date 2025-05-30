@@ -47,9 +47,9 @@ fn main() {
 Usage: fast-local-sync [options] SOURCE DESTINATION
 Options:
     --threads NUM_THREADS
-        Set the number of threads used for scanning and copying files
+        Set the number of threads used for scanning and copying files (default: 8)
     --copy-queue SIZE
-        Set the maximum number of files queued for copy
+        Set the maximum number of files queued for copy (default: 4096)
     --print-stats
         Regularly print the statistics to stdout{}
 Environment variables:
