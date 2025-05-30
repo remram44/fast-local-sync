@@ -34,6 +34,7 @@ fn main() {
     let mut source = None;
     let mut target = None;
     let mut threads = None;
+    let mut copy_queue = None;
     let mut print_stats = false;
 
     #[cfg(feature = "metrics")]
@@ -47,6 +48,8 @@ Usage: fast-local-sync [options] SOURCE DESTINATION
 Options:
     --threads NUM_THREADS
         Set the number of threads used for scanning and copying files
+    --copy-queue SIZE
+        Set the maximum number of files queued for copy
     --print-stats
         Regularly print the statistics to stdout{}
 Environment variables:
@@ -68,6 +71,8 @@ Environment variables:
             exit(0);
         } else if &arg == "--threads" {
             threads = Some(parse_num_option(args.next(), "--threads"));
+        } else if &arg == "--copy-queue" {
+            copy_queue = Some(parse_num_option(args.next(), "--copy-queue"));
         } else if &arg == "--metrics" {
             #[cfg(feature = "metrics")]
             {
@@ -94,6 +99,7 @@ Environment variables:
     }
 
     let threads = threads.unwrap_or(8);
+    let copy_queue = copy_queue.unwrap_or(4096);
     let source: PathBuf = match source {
         Some(s) => s.into(),
         None => {
@@ -131,6 +137,7 @@ Environment variables:
         source.as_path(),
         target.as_path(),
         threads,
+        copy_queue,
         stats.clone(),
     );
     let dir_scan_pool = dir_scanner::DirScanPool::new(

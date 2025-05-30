@@ -25,10 +25,11 @@ impl FileCopyPool {
         source: &Path,
         target: &Path,
         num_threads: usize,
+        queue_size: usize,
         stats: Arc<Stats>,
     ) -> Arc<FileCopyPool> {
         // Create work queue
-        let (send, recv) = bounded(4096);
+        let (send, recv) = bounded(queue_size);
         let enqueued = Arc::new(AtomicUsize::new(0));
 
         let pool = Arc::new(FileCopyPool {
