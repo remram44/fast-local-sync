@@ -1,8 +1,5 @@
 use crossbeam::channel::{Receiver, Sender, unbounded};
-use std::collections::HashSet;
-use std::ffi::OsString;
-use std::fs::{Metadata, read_dir, remove_dir, remove_file, symlink_metadata};
-use std::io::ErrorKind;
+use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -10,26 +7,20 @@ use std::time::Duration;
 use std::thread::{JoinHandle, sleep};
 use tracing::{debug, error, info};
 
-use crate::copy::{copy_directory, copy_extended_metadata};
-use crate::file_copier::FileCopyPool;
 use crate::stats;
 
 pub struct DirScanPool {
     source: PathBuf,
-    target: PathBuf,
     queue_send: Sender<(PathBuf, bool)>,
     queue_recv: Receiver<(PathBuf, bool)>,
     enqueued: Arc<AtomicUsize>,
-    file_copier: Arc<FileCopyPool>,
     threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
 }
 
 impl DirScanPool {
     pub fn new(
         source: &Path,
-        target: &Path,
         num_threads: usize,
-        file_copier: Arc<FileCopyPool>,
     ) -> Arc<DirScanPool> {
         // Create work queue
         let (send, recv) = unbounded();
@@ -37,11 +28,9 @@ impl DirScanPool {
 
         let pool = Arc::new(DirScanPool {
             source: source.to_owned(),
-            target: target.to_owned(),
             queue_send: send,
             queue_recv: recv,
             enqueued,
-            file_copier,
             threads: Mutex::new(Vec::new()),
         });
 
@@ -72,12 +61,6 @@ impl DirScanPool {
         self.queue_send.send((path, true)).unwrap();
     }
 
-    pub fn add_no_check(&self, path: PathBuf) {
-        debug!("scanner add_no_check {:?}", path);
-        self.enqueued.fetch_add(1, Ordering::Relaxed);
-        self.queue_send.send((path, false)).unwrap();
-    }
-
     pub fn join(&self) {
         let enqueued = &*self.enqueued;
         loop {
@@ -90,45 +73,15 @@ impl DirScanPool {
     }
 }
 
-fn metadata_equal(a: &Metadata, b: &Metadata) -> bool {
-    if a.file_type() != b.file_type() {
-        return false;
-    }
-    if a.is_file() && a.len() != b.len() {
-        return false;
-    }
-    #[cfg(target_family = "unix")]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if a.mode() != b.mode() {
-            return false;
-        }
-        if a.uid() != b.uid() {
-            return false;
-        }
-        if a.gid() != b.gid() {
-            return false;
-        }
-    }
-    if a.modified().unwrap() != b.modified().unwrap() {
-        return false;
-    }
-    return true;
-}
-
 fn dir_scan_thread(
     pool: Arc<DirScanPool>,
     stop_condition: Arc<AtomicBool>,
 ) {
     let pool = &*pool;
-    let file_copier = &pool.file_copier;
     let stop_condition = &*stop_condition;
     let source = &pool.source;
-    let target = &pool.target;
 
-    let dir_scan = |dir_path: PathBuf, check_target: bool| {
-        let mut seen_source_entries = HashSet::<OsString>::new();
-
+    let dir_scan = |dir_path: PathBuf| {
         let source_dir = match read_dir(source.join(&dir_path)) {
             Ok(d) => d,
             Err(e) => {
@@ -157,138 +110,15 @@ fn dir_scan_thread(
                     return;
                 }
             };
+
             let entry_path = dir_path.join(source_entry.file_name());
-            seen_source_entries.insert(source_entry.file_name().to_owned());
-
-            let target_path = target.join(&entry_path);
-            debug!("target_path {:?}", target_path);
-
-            let copy = || {
-                if source_metadata.is_dir() {
-                    if let Err(e) = copy_directory(&source_path, &target_path) {
-                        error!("Error copying directory: {}", e);
-                        stats::add_errors(1);
-                        return;
-                    }
-
-                    pool.add_no_check(entry_path.clone());
-                } else {
-                    file_copier.add(entry_path.clone());
-                }
-            };
-
-            if !check_target {
-                // Fast path: if the subtree doesn't exist on the target,
-                // no need to check each entry
-                copy();
-            } else {
-                match symlink_metadata(&target_path) {
-                    Err(e) if e.kind() == ErrorKind::NotFound => {
-                        // Target does not exist, copy
-                        debug!("Target does not exist, copy {:?}", entry_path);
-                        copy();
-                    }
-                    Err(e) => {
-                        error!("Error reading target entry: {}", e);
-                        stats::add_errors(1);
-                        continue;
-                    }
-                    Ok(target_metadata) => {
-                        // Compare metadata
-                        if source_metadata.file_type() != target_metadata.file_type() {
-                            debug!("Different file type, removing target {:?}", target_path);
-                            if target_metadata.is_dir() {
-                                if let Err(e) = remove_dir_recursive(&target_path) {
-                                    error!("Error removing target directory: {}", e);
-                                    stats::add_errors(1);
-                                    continue;
-                                }
-                            } else {
-                                if let Err(e) = remove_file(&target_path) {
-                                    error!("Error removing target entry: {}", e);
-                                    stats::add_errors(1);
-                                    continue;
-                                }
-                                stats::add_removed(1, target_metadata.len());
-                            }
-                            // Target no longer exists, copy
-                            copy();
-                        } else if source_metadata.is_dir() {
-                            if !metadata_equal(&source_metadata, &target_metadata) {
-                                if let Err(e) = copy_directory(&source_path, &target_path) {
-                                    error!("Error copying directory: {}", e);
-                                    stats::add_errors(1);
-                                    continue;
-                                }
-                            }
-                            // Recurse
-                            pool.add(entry_path.clone());
-                        } else if !metadata_equal(&source_metadata, &target_metadata) {
-                            // Copy non-directory entry (file, link, ...)
-                            file_copier.add(entry_path.clone());
-                        } else {
-                            if !source_metadata.is_symlink() {
-                                // Copy extended metadata
-                                if let Err(e) = copy_extended_metadata(&source_path, &target_path, source_metadata.is_dir()) {
-                                    error!("Error copying extended metadata: {}", e);
-                                    stats::add_errors(1);
-                                }
-                            }
-                            stats::add_skipped(1, source_metadata.len());
-                        }
-                    }
-                }
+            if source_metadata.is_dir() {
+                pool.add(entry_path.clone());
             }
+
+            std::hint::black_box((source_path, source_metadata));
 
             stats::add_scanned_entries(1);
-        }
-
-        // Remove unseen entries in target
-        let target_dir = match read_dir(target.join(&dir_path)) {
-            Ok(d) => d,
-            Err(e) => {
-                error!("Error reading target directory: {}", e);
-                stats::add_errors(1);
-                return;
-            }
-        };
-
-        for target_entry in target_dir {
-            let target_entry = match target_entry {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("Error reading target directory entry: {}", e);
-                    stats::add_errors(1);
-                    return;
-                }
-            };
-            if !seen_source_entries.contains(&target_entry.file_name()) {
-                let target_metadata = match target_entry.metadata() {
-                    Ok(m) => m,
-                    Err(e) => {
-                        error!("Error reading target directory entry: {}", e);
-                        stats::add_errors(1);
-                        return;
-                    }
-                };
-
-                if target_metadata.is_dir() {
-                    debug!("Removing directory, not in source: {:?}", target_entry.path());
-                    if let Err(e) = remove_dir_recursive(&target_entry.path()) {
-                        error!("Error removing target directory: {}", e);
-                        stats::add_errors(1);
-                        continue;
-                    }
-                } else {
-                    debug!("Removing file, not in source: {:?}", target_entry.path());
-                    if let Err(e) = remove_file(target_entry.path()) {
-                        error!("Error removing target entry: {}", e);
-                        stats::add_errors(1);
-                        continue;
-                    }
-                    stats::add_removed(1, target_metadata.len());
-                }
-            }
         }
     };
 
@@ -306,25 +136,9 @@ fn dir_scan_thread(
         };
 
         debug!("Scanning {:?}, check_target={}", path, check_target);
-        dir_scan(path, check_target);
+        dir_scan(path);
         stats::add_listed_directory(1);
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }
-}
-
-fn remove_dir_recursive(path: &Path) -> std::io::Result<()> {
-    for entry in read_dir(path)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            remove_dir_recursive(&entry.path())?;
-        } else {
-            let size = entry.metadata()?.len();
-            remove_file(&entry.path())?;
-            stats::add_removed(1, size);
-        };
-    }
-    remove_dir(path)?;
-    stats::add_removed(1, 0);
-    Ok(())
 }

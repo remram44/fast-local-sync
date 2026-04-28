@@ -1,6 +1,4 @@
-mod copy;
 mod dir_scanner;
-mod file_copier;
 mod stats;
 
 use pretty_env_logger;
@@ -32,9 +30,7 @@ fn main() {
 
     // Parse command line
     let mut source = None;
-    let mut target = None;
     let mut threads = None;
-    let mut copy_queue = None;
 
     #[cfg(feature = "metrics")]
     let mut metrics_port = None;
@@ -43,12 +39,10 @@ fn main() {
     args.next();
     let usage = format!(
         "\
-Usage: fast-local-sync [options] SOURCE DESTINATION
+Usage: fast-local-sync [options] SOURCE
 Options:
     --threads NUM_THREADS
-        Set the number of threads used for scanning and copying files (default: 8)
-    --copy-queue SIZE
-        Set the maximum number of files queued for copy (default: 4096){}
+        Set the number of threads used for scanning and copying files (default: 8){}
 Environment variables:
     RUST_LOG
         Controls the logging level, for example \"info\"
@@ -68,8 +62,6 @@ Environment variables:
             exit(0);
         } else if &arg == "--threads" {
             threads = Some(parse_num_option(args.next(), "--threads"));
-        } else if &arg == "--copy-queue" {
-            copy_queue = Some(parse_num_option(args.next(), "--copy-queue"));
         } else if &arg == "--metrics" {
             #[cfg(feature = "metrics")]
             {
@@ -83,8 +75,6 @@ Environment variables:
         } else {
             if source.is_none() {
                 source = Some(arg);
-            } else if target.is_none() {
-                target = Some(arg);
             } else {
                 eprintln!("Too many arguments");
                 eprintln!("{}", usage);
@@ -94,7 +84,6 @@ Environment variables:
     }
 
     let threads = threads.unwrap_or(8);
-    let copy_queue = copy_queue.unwrap_or(4096);
     let source: PathBuf = match source {
         Some(s) => s.into(),
         None => {
@@ -103,19 +92,6 @@ Environment variables:
             exit(2);
         }
     };
-    let target: PathBuf = match target {
-        Some(s) => s.into(),
-        None => {
-            eprintln!("Missing target");
-            eprintln!("{}", usage);
-            exit(2);
-        }
-    };
-
-    if !target.exists() {
-        eprintln!("Destination directory does not exist!");
-        exit(1);
-    }
 
     // Initialize statistics
     #[cfg(feature = "metrics")]
@@ -124,17 +100,9 @@ Environment variables:
     }
 
     // Create worker pools
-    let file_copy_pool = file_copier::FileCopyPool::new(
-        source.as_path(),
-        target.as_path(),
-        threads,
-        copy_queue,
-    );
     let dir_scan_pool = dir_scanner::DirScanPool::new(
         source.as_path(),
-        target.as_path(),
         threads,
-        file_copy_pool.clone(),
     );
 
     // Enqueue work
@@ -142,5 +110,4 @@ Environment variables:
 
     // Wait until done
     dir_scan_pool.join();
-    file_copy_pool.join();
 }
