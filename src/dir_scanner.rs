@@ -81,7 +81,10 @@ fn dir_scan_thread(
     let stop_condition = &*stop_condition;
     let source = &pool.source;
 
-    let dir_scan = |dir_path: PathBuf| {
+    let mut scanned_entries = 0;
+    let mut listed_directories = 0;
+
+    let dir_scan = |dir_path: PathBuf, scanned_entries: &mut u32| {
         let source_dir = match read_dir(source.join(&dir_path)) {
             Ok(d) => d,
             Err(e) => {
@@ -118,7 +121,11 @@ fn dir_scan_thread(
 
             std::hint::black_box((source_path, source_metadata));
 
-            stats::add_scanned_entries(1);
+            *scanned_entries += 1;
+            if *scanned_entries == 1000 {
+                stats::add_scanned_entries(1000);
+                *scanned_entries = 0;
+            }
         }
     };
 
@@ -136,8 +143,12 @@ fn dir_scan_thread(
         };
 
         debug!("Scanning {:?}, check_target={}", path, check_target);
-        dir_scan(path);
-        stats::add_listed_directory(1);
+        dir_scan(path, &mut scanned_entries);
+        listed_directories += 1;
+        if listed_directories == 1000 {
+            stats::add_listed_directory(1000);
+            listed_directories = 0;
+        }
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);
     }
