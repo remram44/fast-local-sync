@@ -1,5 +1,5 @@
 use crossbeam::channel::{Receiver, Sender, bounded};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::sleep;
@@ -11,18 +11,16 @@ use crate::copy::copy_file;
 use crate::stats;
 
 pub struct FileCopyPool {
-    source: PathBuf,
-    target: PathBuf,
-    queue_send: Sender<PathBuf>,
-    queue_recv: Receiver<PathBuf>,
+    source_target_pairs: Vec<(PathBuf, PathBuf)>,
+    queue_send: Sender<(usize, PathBuf)>,
+    queue_recv: Receiver<(usize, PathBuf)>,
     enqueued: Arc<AtomicUsize>,
     threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
 }
 
 impl FileCopyPool {
     pub fn new(
-        source: &Path,
-        target: &Path,
+        source_target_pairs: Vec<(PathBuf, PathBuf)>,
         num_threads: usize,
         queue_size: usize,
     ) -> Arc<FileCopyPool> {
@@ -31,8 +29,7 @@ impl FileCopyPool {
         let enqueued = Arc::new(AtomicUsize::new(0));
 
         let pool = Arc::new(FileCopyPool {
-            source: source.to_owned(),
-            target: target.to_owned(),
+            source_target_pairs,
             queue_send: send,
             queue_recv: recv,
             enqueued,
@@ -66,11 +63,11 @@ impl FileCopyPool {
         pool
     }
 
-    pub fn add(&self, path: PathBuf) {
+    pub fn add(&self, pair_index: usize, path: PathBuf) {
         debug!("copier add {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
         stats::add_queued_copy_entries(1);
-        self.queue_send.send(path).unwrap();
+        self.queue_send.send((pair_index, path)).unwrap();
     }
 
     pub fn join(&self) {
@@ -92,7 +89,7 @@ fn file_copy_thread(
     let pool = &*pool;
 
     loop {
-        let path = match pool.queue_recv.recv_timeout(Duration::from_secs(5)) {
+        let (index, path) = match pool.queue_recv.recv_timeout(Duration::from_secs(5)) {
             Ok(p) => p,
             Err(_) => {
                 // Check if we should stop
@@ -103,8 +100,8 @@ fn file_copy_thread(
             }
         };
 
-        let source_path = pool.source.join(&path);
-        let target_path = pool.target.join(&path);
+        let source_path = pool.source_target_pairs[index].0.join(&path);
+        let target_path = pool.source_target_pairs[index].1.join(&path);
 
         debug!("copy {:?} -> {:?}", source_path, target_path);
 

@@ -31,8 +31,8 @@ fn main() {
     pretty_env_logger::init_timed();
 
     // Parse command line
-    let mut source = None;
-    let mut target = None;
+    let mut source_target_pairs: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut next_source = None;
     let mut threads = None;
     let mut copy_queue = None;
 
@@ -43,7 +43,7 @@ fn main() {
     args.next();
     let usage = format!(
         "\
-Usage: fast-local-sync [options] SOURCE DESTINATION
+Usage: fast-local-sync [options] SOURCE DESTINATION [SOURCE DESTINATION [...]]
 Options:
     --threads NUM_THREADS
         Set the number of threads used for scanning and copying files (default: 8)
@@ -81,64 +81,58 @@ Environment variables:
                 exit(2);
             }
         } else {
-            if source.is_none() {
-                source = Some(arg);
-            } else if target.is_none() {
-                target = Some(arg);
+            if let Some(next_source) = next_source.take() {
+                source_target_pairs.push((next_source, arg.into()));
             } else {
-                eprintln!("Too many arguments");
-                eprintln!("{}", usage);
-                exit(2);
+                next_source = Some(arg.into());
             }
         }
     }
 
+    if source_target_pairs.len() == 0 {
+        eprintln!("Need at least one source and destination");
+        exit(2);
+    }
+
+    if next_source.is_some() {
+        eprintln!("Need as many sources as destinations");
+        exit(2);
+    }
+
     let threads = threads.unwrap_or(8);
     let copy_queue = copy_queue.unwrap_or(4096);
-    let source: PathBuf = match source {
-        Some(s) => s.into(),
-        None => {
-            eprintln!("Missing source");
-            eprintln!("{}", usage);
-            exit(2);
-        }
-    };
-    let target: PathBuf = match target {
-        Some(s) => s.into(),
-        None => {
-            eprintln!("Missing target");
-            eprintln!("{}", usage);
-            exit(2);
-        }
-    };
 
-    if !target.exists() {
-        eprintln!("Destination directory does not exist!");
-        exit(1);
+    for (_, target) in &source_target_pairs {
+        if !target.exists() {
+            eprintln!("Destination directory does not exist: {:?}", target);
+            exit(1);
+        }
     }
+
+    let num_pairs = source_target_pairs.len();
 
     // Initialize statistics
     #[cfg(feature = "metrics")]
     if let Some(port) = metrics_port {
-        stats::serve_prometheus(port);
+        stats::serve_prometheus(port, num_pairs);
     }
 
     // Create worker pools
     let file_copy_pool = file_copier::FileCopyPool::new(
-        source.as_path(),
-        target.as_path(),
+        source_target_pairs.clone(),
         threads,
         copy_queue,
     );
     let dir_scan_pool = dir_scanner::DirScanPool::new(
-        source.as_path(),
-        target.as_path(),
+        source_target_pairs,
         threads,
         file_copy_pool.clone(),
     );
 
     // Enqueue work
-    dir_scan_pool.add("".into());
+    for i in 0..num_pairs {
+        dir_scan_pool.add(i, "".into());
+    }
 
     // Wait until done
     dir_scan_pool.join();

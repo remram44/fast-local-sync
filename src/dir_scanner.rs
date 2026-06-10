@@ -15,10 +15,9 @@ use crate::file_copier::FileCopyPool;
 use crate::stats;
 
 pub struct DirScanPool {
-    source: PathBuf,
-    target: PathBuf,
-    queue_send: Sender<(PathBuf, bool)>,
-    queue_recv: Receiver<(PathBuf, bool)>,
+    source_target_pairs: Vec<(PathBuf, PathBuf)>,
+    queue_send: Sender<(usize, PathBuf, bool)>,
+    queue_recv: Receiver<(usize, PathBuf, bool)>,
     enqueued: Arc<AtomicUsize>,
     file_copier: Arc<FileCopyPool>,
     threads: Mutex<Vec<(JoinHandle<()>, Arc<AtomicBool>)>>,
@@ -26,8 +25,7 @@ pub struct DirScanPool {
 
 impl DirScanPool {
     pub fn new(
-        source: &Path,
-        target: &Path,
+        source_target_pairs: Vec<(PathBuf, PathBuf)>,
         num_threads: usize,
         file_copier: Arc<FileCopyPool>,
     ) -> Arc<DirScanPool> {
@@ -36,8 +34,7 @@ impl DirScanPool {
         let enqueued = Arc::new(AtomicUsize::new(0));
 
         let pool = Arc::new(DirScanPool {
-            source: source.to_owned(),
-            target: target.to_owned(),
+            source_target_pairs,
             queue_send: send,
             queue_recv: recv,
             enqueued,
@@ -66,16 +63,16 @@ impl DirScanPool {
         pool
     }
 
-    pub fn add(&self, path: PathBuf) {
+    pub fn add(&self, index: usize, path: PathBuf) {
         debug!("scanner add {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
-        self.queue_send.send((path, true)).unwrap();
+        self.queue_send.send((index, path, true)).unwrap();
     }
 
-    pub fn add_no_check(&self, path: PathBuf) {
+    pub fn add_no_check(&self, index: usize, path: PathBuf) {
         debug!("scanner add_no_check {:?}", path);
         self.enqueued.fetch_add(1, Ordering::Relaxed);
-        self.queue_send.send((path, false)).unwrap();
+        self.queue_send.send((index, path, false)).unwrap();
     }
 
     pub fn join(&self) {
@@ -123,11 +120,12 @@ fn dir_scan_thread(
     let pool = &*pool;
     let file_copier = &pool.file_copier;
     let stop_condition = &*stop_condition;
-    let source = &pool.source;
-    let target = &pool.target;
 
-    let dir_scan = |dir_path: PathBuf, check_target: bool| {
+    let dir_scan = |index: usize, dir_path: PathBuf, check_target: bool| {
         let mut seen_source_entries = HashSet::<OsString>::new();
+
+        let source = pool.source_target_pairs[index].0.as_path();
+        let target = pool.source_target_pairs[index].1.as_path();
 
         let source_dir = match read_dir(source.join(&dir_path)) {
             Ok(d) => d,
@@ -171,9 +169,9 @@ fn dir_scan_thread(
                         return;
                     }
 
-                    pool.add_no_check(entry_path.clone());
+                    pool.add_no_check(index, entry_path.clone());
                 } else {
-                    file_copier.add(entry_path.clone());
+                    file_copier.add(index, entry_path.clone());
                 }
             };
 
@@ -222,10 +220,10 @@ fn dir_scan_thread(
                                 }
                             }
                             // Recurse
-                            pool.add(entry_path.clone());
+                            pool.add(index, entry_path.clone());
                         } else if !metadata_equal(&source_metadata, &target_metadata) {
                             // Copy non-directory entry (file, link, ...)
-                            file_copier.add(entry_path.clone());
+                            file_copier.add(index, entry_path.clone());
                         } else {
                             if !source_metadata.is_symlink() {
                                 // Copy extended metadata
@@ -293,7 +291,7 @@ fn dir_scan_thread(
     };
 
     loop {
-        let (path, check_target) = match pool.queue_recv.recv_timeout(Duration::from_secs(5)) {
+        let (index, path, check_target) = match pool.queue_recv.recv_timeout(Duration::from_secs(5)) {
             Ok(p) => p,
             Err(_) => {
                 // Check if we should stop
@@ -306,7 +304,7 @@ fn dir_scan_thread(
         };
 
         debug!("Scanning {:?}, check_target={}", path, check_target);
-        dir_scan(path, check_target);
+        dir_scan(index, path, check_target);
         stats::add_listed_directory(1);
 
         pool.enqueued.fetch_sub(1, Ordering::Relaxed);

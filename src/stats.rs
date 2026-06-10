@@ -9,6 +9,10 @@ use prometheus::{
 
 #[cfg(feature = "metrics")]
 lazy_static! {
+    static ref PAIRS: IntGauge = register_int_gauge!(
+        "sync_source_destination_pairs",
+        "Number of source/destination pairs.",
+    ).unwrap();
     static ref SCANNED_ENTRIES: IntCounter = register_int_counter!(
         "sync_scanned_entries",
         "Total number of entries scanned.",
@@ -52,7 +56,7 @@ lazy_static! {
 }
 
 #[cfg(feature = "metrics")]
-pub fn serve_prometheus(port: u16) {
+pub fn serve_prometheus(port: u16, num_pairs: usize) {
     use tokio::runtime::Builder;
     use tracing::info;
     use warp::Filter;
@@ -77,6 +81,8 @@ pub fn serve_prometheus(port: u16) {
             warp::serve(routes).run(addr).await;
         });
     });
+
+    PAIRS.set(num_pairs as i64);
 }
 
 pub fn add_scanned_entries(count: usize) {
